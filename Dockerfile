@@ -1,12 +1,14 @@
-FROM node:20-alpine
+FROM node:20-slim
 
-RUN apk add --no-cache python3 make g++ bash jq
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ bash jq \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install server dependencies
-COPY server/package.json server/package-lock.json* ./server/
-RUN cd server && npm install --production
+# Install server dependencies (ignore host lock file, build native modules fresh)
+COPY server/package.json ./server/
+RUN cd server && npm install --production --build-from-source
 
 # Copy application
 COPY server/ ./server/

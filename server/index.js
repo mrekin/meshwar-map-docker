@@ -13,6 +13,17 @@ app.use(express.json({ limit: '50mb' }));
 // Serve static frontend
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Serve map config (center, zoom) from environment variables
+app.get('/api/config', (req, res) => {
+  res.json({
+    center: [
+      parseFloat(process.env.MAP_CENTER_LAT || '47.6062'),
+      parseFloat(process.env.MAP_CENTER_LON || '-122.3321'),
+    ],
+    zoom: parseInt(process.env.MAP_ZOOM || '10'),
+  });
+});
+
 // ==================== GET /api/samples ====================
 // Returns coverage data in the same format as the Cloudflare version
 // so the existing frontend works without modification.

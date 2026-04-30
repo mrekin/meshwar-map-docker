@@ -1,7 +1,5 @@
-node_modules/
+server/node_modules
 data/meshwar.db
 data/meshwar.db-wal
 data/meshwar.db-shm
 data/processed/*.json
-*.log
-tools/*.json

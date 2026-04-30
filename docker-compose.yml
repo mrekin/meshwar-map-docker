@@ -11,4 +11,8 @@ services:
       - PORT=3000
       - ALLOW_UPLOAD=false    # Set to 'true' to enable app uploads
       - DB_PATH=/app/data/meshwar.db
+      # Uncomment and set to your region's coordinates:
+      # - MAP_CENTER_LAT=47.6062
+      # - MAP_CENTER_LON=-122.3321
+      # - MAP_ZOOM=10
     restart: unless-stopped

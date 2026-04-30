@@ -61,11 +61,22 @@ const map = L.map('map', {
     preferCanvas: true,
     worldCopyJump: false,
     maxBounds: [[-90, -180], [90, 180]],
-    maxBoundsViscosity: 1.0
+    maxBoundsViscosity: 1.0,
     zoomControl: false
 });
 
 L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+// Center map: try server config first, then browser geolocation, then default (Seattle)
+fetch('/api/config').then(r => r.json()).then(cfg => {
+    map.setView(cfg.center, cfg.zoom);
+}).catch(() => {});
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+        (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 12),
+        () => {}
+    );
+}
 
 // Popup scroll handling
 map.on('popupopen', (e) => {
