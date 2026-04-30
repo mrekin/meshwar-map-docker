@@ -4,10 +4,19 @@ Self-hosted version of the MeshCore wardrive coverage map. Runs locally with SQL
 
 ## Quick Start
 
+### With Docker
 ```bash
 git clone https://github.com/mintylinux/meshwar-map-docker.git
 cd meshwar-map-docker
-docker compose up -d
+docker-compose up -d
+```
+
+### Without Docker
+```bash
+git clone https://github.com/mintylinux/meshwar-map-docker.git
+cd meshwar-map-docker/server
+npm install
+npm start
 ```
 
 Open http://localhost:3000 in your browser.
