@@ -3,16 +3,10 @@ services:
     build: .
     container_name: meshwar-map
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     volumes:
       - ./data:/app/data
       - ./tools:/app/tools
-    environment:
-      - PORT=3000
-      - ALLOW_UPLOAD=false    # Set to 'true' to enable app uploads
-      - DB_PATH=/app/data/meshwar.db
-      # Uncomment and set to your region's coordinates:
-      # - MAP_CENTER_LAT=47.6062
-      # - MAP_CENTER_LON=-122.3321
-      # - MAP_ZOOM=10
+    env_file:
+      - .env
     restart: unless-stopped

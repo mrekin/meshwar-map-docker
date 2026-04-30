@@ -8,6 +8,7 @@ Self-hosted version of the MeshCore wardrive coverage map. Runs locally with SQL
 ```bash
 git clone https://github.com/mintylinux/meshwar-map-docker.git
 cd meshwar-map-docker
+cp .env.example .env    # Create your config (edit as needed)
 docker-compose up -d
 ```
 
@@ -67,11 +68,19 @@ Only enable on trusted networks — there is no authentication.
 - `GET /api/stats` — Global statistics
 - `GET /api/contributors` — Contributor leaderboard
 
-## Environment Variables
+## Configuration
+
+All settings are in `.env` (not tracked by git — safe to customize without merge conflicts):
+
+```bash
+cp .env.example .env   # First time setup
+```
 
 - `PORT` (default: 3000) — Server port
 - `ALLOW_UPLOAD` (default: false) — Enable app uploads
 - `DB_PATH` (default: /app/data/meshwar.db) — Database path
+- `MAP_CENTER_LAT` / `MAP_CENTER_LON` — Default map center
+- `MAP_ZOOM` — Default zoom level
 
 ## Reverse Proxy
 

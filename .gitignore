@@ -3,5 +3,7 @@ data/meshwar.db
 data/meshwar.db-wal
 data/meshwar.db-shm
 data/processed/*.json
+.env
+tools/*.json
 *.log
 tools/*.json
