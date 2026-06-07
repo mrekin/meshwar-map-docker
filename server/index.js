@@ -29,7 +29,8 @@ app.get('/api/config', (req, res) => {
 // so the existing frontend works without modification.
 app.get('/api/samples', (req, res) => {
   try {
-    const coverage = db.getCoverage();
+    const contributor = req.query.contributor || null;
+    const coverage = db.getCoverage(contributor);
     const stats = db.getGlobalStats();
     
     res.json({
@@ -95,6 +96,52 @@ app.get('/api/contributors', (req, res) => {
     const days = parseInt(req.query.days) || 0;
     const contributors = db.getContributorStats(days);
     res.json({ contributors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== GET /api/repeaters ====================
+// Returns all repeater contacts for map display
+app.get('/api/repeaters', (req, res) => {
+  try {
+    const repeaters = db.getRepeaters();
+    res.json({ repeaters });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== POST /api/repeaters ====================
+// Import repeater contacts (JSON array)
+app.post('/api/repeaters', (req, res) => {
+  try {
+    const { repeaters } = req.body;
+    
+    if (!repeaters || !Array.isArray(repeaters)) {
+      return res.status(400).json({ error: 'Invalid request: repeaters array required' });
+    }
+    
+    const addedBy = req.body.addedBy || null;
+    const result = db.importRepeaters(repeaters, addedBy);
+    
+    res.json({
+      success: true,
+      inserted: result.inserted,
+      updated: result.updated,
+      total: db.getRepeaters().length,
+    });
+  } catch (err) {
+    console.error('Error importing repeaters:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== DELETE /api/repeaters/:nodeId ====================
+app.delete('/api/repeaters/:nodeId', (req, res) => {
+  try {
+    db.deleteRepeater(req.params.nodeId);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -134,6 +134,13 @@ let shardLoadPending = false;   // Prevents concurrent shard loads
 // Expiry: cells older than this are not rendered
 const EXPIRY_DAYS = 90;
 
+// Time filter state (0 = all, N = last N days)
+let timeFilterDays = 0;
+let activeContributor = '';
+
+// Repeater contacts
+let repeaterContacts = [];
+
 // ---------------------
 // Utility functions
 // ---------------------
@@ -219,6 +226,9 @@ function renderVisibleCoverage() {
 
         // Expiry filter: hide cells older than 90 days
         if (ageInDays(cell.lastUpdate) > EXPIRY_DAYS) return;
+
+        // Time filter: hide cells older than selected period
+        if (timeFilterDays > 0 && ageInDays(cell.lastUpdate) > timeFilterDays) return;
 
         // Skip cells with no actual ping data (GPS-only uploads)
         if ((cell.received + cell.lost) === 0) return;
@@ -419,12 +429,15 @@ function toggleRepeaterLayer() {
     showRepeaters = document.getElementById('toggle-repeaters').checked;
     if (showRepeaters) {
         map.addLayer(repeaterLayer);
+        map.addLayer(repeaterContactLayer);
         if (cachedCoverage) {
             const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
             updateRepeaterMarkers(aggregated);
         }
+        updateRepeaterContactMarkers();
     } else {
         map.removeLayer(repeaterLayer);
+        map.removeLayer(repeaterContactLayer);
     }
 }
 
@@ -731,7 +744,9 @@ async function loadData() {
             headers['If-None-Match'] = currentETag;
         }
 
-        const response = await fetch('/api/samples', { headers });
+        let url = '/api/samples';
+        if (activeContributor) url += `?contributor=${encodeURIComponent(activeContributor)}`;
+        const response = await fetch(url, { headers });
 
         // 304 Not Modified — data hasn't changed
         if (response.status === 304) {
@@ -1027,9 +1042,88 @@ function showRepeaterInfo(name, rssi, snr, lastSeen) {
 })();
 
 // ---------------------
+// Time filter
+// ---------------------
+function setTimeFilter(days) {
+    timeFilterDays = days;
+    document.querySelectorAll('.time-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    scheduleRender();
+}
+
+// ---------------------
+// Contributor filter
+// ---------------------
+function filterByContributor() {
+    activeContributor = document.getElementById('contributor-filter').value;
+    loadData(); // Reload with filter
+}
+
+function loadContributors() {
+    fetch('/api/contributors').then(r => r.json()).then(data => {
+        const select = document.getElementById('contributor-filter');
+        if (!select || !data.contributors) return;
+        // Keep first option (All)
+        select.innerHTML = '<option value="">All Contributors</option>';
+        data.contributors.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.name;
+            opt.textContent = `${c.name} (${c.totalSamples} samples)`;
+            select.appendChild(opt);
+        });
+    }).catch(() => {});
+}
+
+// ---------------------
+// Repeater contacts layer
+// ---------------------
+const repeaterContactLayer = L.layerGroup();
+
+function loadRepeaterContacts() {
+    fetch('/api/repeaters').then(r => r.json()).then(data => {
+        repeaterContacts = data.repeaters || [];
+        if (showRepeaters) updateRepeaterContactMarkers();
+    }).catch(() => {});
+}
+
+function updateRepeaterContactMarkers() {
+    repeaterContactLayer.clearLayers();
+    if (!showRepeaters || repeaterContacts.length === 0) return;
+
+    const mapBounds = map.getBounds();
+
+    repeaterContacts.forEach(rep => {
+        if (!mapBounds.contains([rep.latitude, rep.longitude])) return;
+
+        const icon = L.divIcon({
+            className: 'repeater-marker-icon',
+            html: '📡',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        const displayName = rep.name || rep.node_id;
+        const marker = L.marker([rep.latitude, rep.longitude], { icon: icon });
+        marker.bindPopup(`
+            <div class="popup-content">
+                <div style="font-weight: bold; color: #00e676; margin-bottom: 8px;">📡 ${displayName}</div>
+                <div><span class="popup-label">Node ID:</span> ${rep.node_id}</div>
+                <div><span class="popup-label">Location:</span> ${rep.latitude.toFixed(5)}, ${rep.longitude.toFixed(5)}</div>
+                ${rep.elevation ? `<div><span class="popup-label">Elevation:</span> ${rep.elevation}m</div>` : ''}
+                ${rep.added_by ? `<div><span class="popup-label">Added by:</span> ${rep.added_by}</div>` : ''}
+            </div>
+        `);
+
+        repeaterContactLayer.addLayer(marker);
+    });
+}
+
+// ---------------------
 // Initialize
 // ---------------------
 loadData();
+loadContributors();
+loadRepeaterContacts();
 
 // Auto-refresh every 30 seconds
 setInterval(loadData, 30000);

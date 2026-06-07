@@ -8,8 +8,8 @@
     "import": "node ../tools/import.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
-    "express": "^4.21.0",
-    "cors": "^2.8.5"
+    "better-sqlite3": "^12.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
   }
 }

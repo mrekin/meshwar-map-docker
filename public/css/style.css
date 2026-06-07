@@ -713,3 +713,45 @@ body.light-theme .timelapse-btn:hover {
         min-width: calc(100vw - 40px);
     }
 }
+
+/* Time filter buttons */
+.time-filter-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.time-btn {
+    flex: 1;
+    padding: 6px 4px;
+    border: 1px solid #444;
+    background: #2a2a2a;
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s;
+}
+
+.time-btn:hover {
+    background: #3a3a3a;
+    border-color: #00e676;
+}
+
+.time-btn.active {
+    background: #00e676;
+    color: #000;
+    border-color: #00e676;
+    font-weight: bold;
+}
+
+.light-theme .time-btn {
+    background: #e8e8e8;
+    border-color: #ccc;
+    color: #333;
+}
+
+.light-theme .time-btn.active {
+    background: #00c853;
+    color: #fff;
+    border-color: #00c853;
+}

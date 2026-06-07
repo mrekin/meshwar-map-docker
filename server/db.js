@@ -42,24 +42,46 @@ function initSchema() {
   d.exec(`CREATE INDEX IF NOT EXISTS idx_samples_timestamp ON samples (timestamp)`);
   d.exec(`CREATE INDEX IF NOT EXISTS idx_samples_contributor ON samples (contributor)`);
   d.exec(`CREATE INDEX IF NOT EXISTS idx_samples_sample_id ON samples (sample_id)`);
+  
+  // Repeater contacts table
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS repeaters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_id TEXT UNIQUE NOT NULL,
+      name TEXT,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      elevation REAL,
+      added_at TEXT NOT NULL,
+      added_by TEXT
+    )
+  `);
 }
 
 /**
  * Get aggregated coverage data in the same format as the Cloudflare version.
  * Returns { coverage: { geohash: { received, lost, samples, repeaters, lastUpdate, appVersion } } }
  */
-function getCoverage() {
+function getCoverage(contributorFilter = null) {
   const d = getDb();
   const cutoff = '1970-01-01T00:00:00.000Z';
   
   // Get all non-expired samples with actual ping data
-  const rows = d.prepare(`
+  let query = `
     SELECT geohash, node_id, latitude, longitude, rssi, snr, 
            ping_success, timestamp, app_version, contributor
     FROM samples
     WHERE timestamp > ? AND ping_success IS NOT NULL
-    ORDER BY timestamp ASC
-  `).all(cutoff);
+  `;
+  const params = [cutoff];
+  
+  if (contributorFilter) {
+    query += ' AND contributor = ?';
+    params.push(contributorFilter);
+  }
+  
+  query += ' ORDER BY timestamp ASC';
+  const rows = d.prepare(query).all(...params);
   
   const coverage = {};
   
@@ -287,6 +309,75 @@ function getGlobalStats() {
   };
 }
 
+// ============================================================================
+// REPEATER CONTACTS
+// ============================================================================
+
+/**
+ * Get all repeater contacts.
+ */
+function getRepeaters() {
+  const d = getDb();
+  return d.prepare('SELECT * FROM repeaters ORDER BY name, node_id').all();
+}
+
+/**
+ * Add or update a repeater contact.
+ * Uses node_id as unique key — updates if exists.
+ */
+function upsertRepeater(nodeId, lat, lon, name = null, elevation = null, addedBy = null) {
+  const d = getDb();
+  return d.prepare(`
+    INSERT INTO repeaters (node_id, name, latitude, longitude, elevation, added_at, added_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(node_id) DO UPDATE SET
+      name = COALESCE(excluded.name, repeaters.name),
+      latitude = excluded.latitude,
+      longitude = excluded.longitude,
+      elevation = COALESCE(excluded.elevation, repeaters.elevation),
+      added_by = COALESCE(excluded.added_by, repeaters.added_by)
+  `).run(nodeId, name, lat, lon, elevation, new Date().toISOString(), addedBy);
+}
+
+/**
+ * Import multiple repeater contacts.
+ * Returns { inserted, updated }
+ */
+function importRepeaters(repeaters, addedBy = null) {
+  const d = getDb();
+  let inserted = 0, updated = 0;
+  
+  const tx = d.transaction((list) => {
+    for (const r of list) {
+      const nodeId = r.node_id || r.nodeId || r.id;
+      const lat = r.latitude || r.lat;
+      const lon = r.longitude || r.lon;
+      
+      if (!nodeId || !lat || !lon) continue;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+      // Skip 0,0 positions (unknown location)
+      if (lat === 0 && lon === 0) continue;
+      
+      const existing = d.prepare('SELECT id FROM repeaters WHERE node_id = ?').get(nodeId);
+      upsertRepeater(nodeId, lat, lon, r.name || null, r.elevation || null, addedBy);
+      
+      if (existing) updated++;
+      else inserted++;
+    }
+  });
+  
+  tx(repeaters);
+  return { inserted, updated };
+}
+
+/**
+ * Delete a repeater contact by node_id.
+ */
+function deleteRepeater(nodeId) {
+  const d = getDb();
+  return d.prepare('DELETE FROM repeaters WHERE node_id = ?').run(nodeId);
+}
+
 function close() {
   if (db) {
     db.close();
@@ -294,4 +385,4 @@ function close() {
   }
 }
 
-module.exports = { getDb, getCoverage, insertSamples, getContributorStats, getGlobalStats, close };
+module.exports = { getDb, getCoverage, insertSamples, getContributorStats, getGlobalStats, getRepeaters, upsertRepeater, importRepeaters, deleteRepeater, close };
