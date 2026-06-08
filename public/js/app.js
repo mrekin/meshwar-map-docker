@@ -143,6 +143,9 @@ let activeContributor = '';
 // Repeater contacts
 let repeaterContacts = [];
 
+// Repeater whitelist filter (empty = show all)
+let activeRepeaterFilter = '';
+
 // ---------------------
 // Utility functions
 // ---------------------
@@ -472,6 +475,9 @@ function updateEdgeLines(aggregated) {
         const cellCenter = Geohash.center(hash);
 
         Object.keys(cell.repeaters).forEach(nodeId => {
+            // Repeater whitelist filter: only show edges for the selected repeater
+            if (activeRepeaterFilter && nodeId !== activeRepeaterFilter) return;
+
             const contact = contactLookup[nodeId];
             if (!contact) return;
 
@@ -757,6 +763,7 @@ async function loadData() {
         if (data.coverage) {
             cachedCoverage = data.coverage;
             updateStatsFromCoverage();
+            populateRepeaterFilter();
             if (timelapseActive) initTimelapse();
             scheduleRender();
             return;
@@ -1053,6 +1060,50 @@ function setTimeFilter(days) {
 function filterByContributor() {
     activeContributor = document.getElementById('contributor-filter').value;
     loadData(); // Reload with filter
+}
+
+// ---------------------
+// Repeater whitelist filter
+// ---------------------
+function filterByRepeater() {
+    activeRepeaterFilter = document.getElementById('repeater-filter').value;
+    if (showEdges && cachedCoverage) {
+        const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+        updateEdgeLines(aggregated);
+    }
+}
+
+function populateRepeaterFilter() {
+    if (!cachedCoverage) return;
+
+    const repeaterIds = new Set();
+    Object.values(cachedCoverage).forEach(cell => {
+        if (cell.repeaters && typeof cell.repeaters === 'object') {
+            Object.keys(cell.repeaters).forEach(id => repeaterIds.add(id));
+        }
+    });
+
+    const select = document.getElementById('repeater-filter');
+    if (!select) return;
+
+    const current = select.value;
+    select.innerHTML = '<option value="">All Repeaters</option>';
+
+    // Sort and add repeater options
+    [...repeaterIds].sort().forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        // Find name from contacts if available
+        const contact = repeaterContacts.find(r => {
+            const key = (r.node_id.length > 8 ? r.node_id.substring(0, 8) : r.node_id).toUpperCase();
+            return key === id;
+        });
+        opt.textContent = contact ? `${contact.name || id} (${id})` : id;
+        select.appendChild(opt);
+    });
+
+    // Restore previous selection if still valid
+    if (current && repeaterIds.has(current)) select.value = current;
 }
 
 function loadContributors() {
