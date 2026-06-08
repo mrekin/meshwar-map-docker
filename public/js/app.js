@@ -97,7 +97,8 @@ updateThemeIcon();
 // Layer groups
 // ---------------------
 const coverageLayer = L.layerGroup().addTo(map);
-const repeaterLayer = L.layerGroup().addTo(map);
+const repeaterLayer = L.layerGroup();
+const edgeLayer = L.layerGroup();
 const heatmapLayer = L.layerGroup(); // Not added by default
 const measureLayer = L.layerGroup().addTo(map);
 
@@ -109,6 +110,7 @@ let currentETag = null;         // ETag for conditional requests
 let visibleRectangles = {};     // Map of hash -> L.rectangle currently on screen
 let coveragePrecision = 6;      // User-selected display precision
 let showRepeaters = false;
+let showEdges = false;
 let showHeatmap = false;
 let renderPending = false;      // Debounce flag for viewport rendering
 
@@ -292,8 +294,8 @@ function renderVisibleCoverage() {
     // Update heatmap if active
     if (showHeatmap) updateHeatmap(aggregated);
 
-    // Update repeater markers if active
-    if (showRepeaters) updateRepeaterMarkers(aggregated);
+    // Update edge lines if active
+    if (showEdges) updateEdgeLines(aggregated);
 }
 
 // Re-aggregate coverage cells from precision 7 to a target precision
@@ -429,81 +431,71 @@ function toggleRepeaterLayer() {
     showRepeaters = document.getElementById('toggle-repeaters').checked;
     if (showRepeaters) {
         map.addLayer(repeaterLayer);
-        map.addLayer(repeaterContactLayer);
-        if (cachedCoverage) {
-            const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
-            updateRepeaterMarkers(aggregated);
-        }
         updateRepeaterContactMarkers();
     } else {
         map.removeLayer(repeaterLayer);
-        map.removeLayer(repeaterContactLayer);
     }
 }
 
-function updateRepeaterMarkers(aggregated) {
-    if (!showRepeaters) return;
-    repeaterLayer.clearLayers();
+function toggleEdgeLayer() {
+    showEdges = document.getElementById('toggle-edges').checked;
+    if (showEdges) {
+        map.addLayer(edgeLayer);
+        if (cachedCoverage) {
+            const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+            updateEdgeLines(aggregated);
+        }
+    } else {
+        map.removeLayer(edgeLayer);
+    }
+}
 
-    // Collect best signal per repeater across all cells
-    const repeaters = {};
+// Build edge lines from repeater contact positions to coverage cells they were heard in
+function updateEdgeLines(aggregated) {
+    edgeLayer.clearLayers();
+    if (!showEdges || repeaterContacts.length === 0) return;
+
+    const mapBounds = map.getBounds();
+
+    // Build a lookup of repeater contacts by node_id prefix (first 8 chars uppercase)
+    const contactLookup = {};
+    repeaterContacts.forEach(rep => {
+        const key = (rep.node_id.length > 8 ? rep.node_id.substring(0, 8) : rep.node_id).toUpperCase();
+        contactLookup[key] = rep;
+    });
+
+    let edgeCount = 0;
 
     Object.entries(aggregated).forEach(([hash, cell]) => {
         if (!cell.repeaters || typeof cell.repeaters !== 'object') return;
 
-        const center = Geohash.center(hash);
+        const cellCenter = Geohash.center(hash);
 
-        Object.entries(cell.repeaters).forEach(([nodeId, rep]) => {
-            const existing = repeaters[nodeId];
-            const rssi = rep.rssi || -999;
+        Object.keys(cell.repeaters).forEach(nodeId => {
+            const contact = contactLookup[nodeId];
+            if (!contact) return;
 
-            // Keep the entry with the best (highest) RSSI
-            if (!existing || rssi > (existing.rssi || -999)) {
-                repeaters[nodeId] = {
-                    ...rep,
-                    nodeId: nodeId,
-                    lat: center.lat,
-                    lon: center.lon,
-                    cellCount: (existing?.cellCount || 0) + 1
-                };
-            } else {
-                repeaters[nodeId].cellCount = (existing.cellCount || 0) + 1;
-            }
+            // Skip if both endpoints are outside the viewport
+            const repPos = [contact.latitude, contact.longitude];
+            const cellPos = [cellCenter.lat, cellCenter.lon];
+            if (!mapBounds.contains(repPos) && !mapBounds.contains(cellPos)) return;
+
+            // Skip 0,0 repeater positions
+            if (contact.latitude === 0 && contact.longitude === 0) return;
+
+            const line = L.polyline([repPos, cellPos], {
+                color: '#bb86fc',
+                weight: 1.5,
+                opacity: 0.4,
+                dashArray: '4, 6',
+            });
+
+            edgeLayer.addLayer(line);
+            edgeCount++;
         });
     });
 
-    const mapBounds = map.getBounds();
-
-    Object.values(repeaters).forEach(rep => {
-        // Viewport culling
-        if (!mapBounds.contains([rep.lat, rep.lon])) return;
-
-        const icon = L.divIcon({
-            className: 'repeater-marker-icon',
-            html: '📡',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
-        });
-
-        const rssiText = rep.rssi !== null && rep.rssi !== -999 ? `${rep.rssi} dBm` : 'N/A';
-        const snrText = rep.snr !== null ? `${rep.snr} dB` : 'N/A';
-
-        const marker = L.marker([rep.lat, rep.lon], { icon: icon });
-        marker.bindPopup(`
-            <div class="popup-content">
-                <div style="font-weight: bold; color: #00e676; margin-bottom: 8px;">📡 ${rep.name || rep.nodeId}</div>
-                <div><span class="popup-label">Node ID:</span> ${rep.nodeId}</div>
-                <div><span class="popup-label">Best RSSI:</span> <strong style="color: #00e676;">${rssiText}</strong></div>
-                <div><span class="popup-label">SNR:</span> <strong style="color: #00e676;">${snrText}</strong></div>
-                <div><span class="popup-label">Cells Heard:</span> ${rep.cellCount}</div>
-                <div><span class="popup-label">Last Seen:</span> ${rep.lastSeen ? new Date(rep.lastSeen).toLocaleDateString() : 'N/A'}</div>
-            </div>
-        `);
-
-        repeaterLayer.addLayer(marker);
-    });
-
-    console.log(`Plotted ${Object.keys(repeaters).length} repeater markers`);
+    console.log(`Drew ${edgeCount} edge lines`);
 }
 
 // ---------------------
@@ -784,9 +776,13 @@ async function loadData() {
             // Update node count from actual loaded data
             updateNodeCount();
 
-            if (document.getElementById('toggle-repeaters').checked) {
+    if (document.getElementById('toggle-repeaters').checked) {
         showRepeaters = true;
-        updateRepeaterMarkers(aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value)));
+        updateRepeaterContactMarkers();
+    }
+    if (document.getElementById('toggle-edges').checked) {
+        showEdges = true;
+        updateEdgeLines(aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value)));
     }
 
             if (timelapseActive) initTimelapse();
@@ -1075,24 +1071,28 @@ function loadContributors() {
 }
 
 // ---------------------
-// Repeater contacts layer
+// Repeater contacts layer (true positions)
 // ---------------------
-const repeaterContactLayer = L.layerGroup();
-
 function loadRepeaterContacts() {
     fetch('/api/repeaters').then(r => r.json()).then(data => {
         repeaterContacts = data.repeaters || [];
         if (showRepeaters) updateRepeaterContactMarkers();
+        if (showEdges && cachedCoverage) {
+            const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+            updateEdgeLines(aggregated);
+        }
     }).catch(() => {});
 }
 
 function updateRepeaterContactMarkers() {
-    repeaterContactLayer.clearLayers();
+    repeaterLayer.clearLayers();
     if (!showRepeaters || repeaterContacts.length === 0) return;
 
     const mapBounds = map.getBounds();
 
     repeaterContacts.forEach(rep => {
+        // Skip 0,0 positions
+        if (rep.latitude === 0 && rep.longitude === 0) return;
         if (!mapBounds.contains([rep.latitude, rep.longitude])) return;
 
         const icon = L.divIcon({
@@ -1102,6 +1102,15 @@ function updateRepeaterContactMarkers() {
             iconAnchor: [12, 12]
         });
 
+        // Count how many coverage cells heard this repeater
+        const nodeKey = (rep.node_id.length > 8 ? rep.node_id.substring(0, 8) : rep.node_id).toUpperCase();
+        let cellCount = 0;
+        if (cachedCoverage) {
+            Object.values(cachedCoverage).forEach(cell => {
+                if (cell.repeaters && cell.repeaters[nodeKey]) cellCount++;
+            });
+        }
+
         const displayName = rep.name || rep.node_id;
         const marker = L.marker([rep.latitude, rep.longitude], { icon: icon });
         marker.bindPopup(`
@@ -1110,12 +1119,15 @@ function updateRepeaterContactMarkers() {
                 <div><span class="popup-label">Node ID:</span> ${rep.node_id}</div>
                 <div><span class="popup-label">Location:</span> ${rep.latitude.toFixed(5)}, ${rep.longitude.toFixed(5)}</div>
                 ${rep.elevation ? `<div><span class="popup-label">Elevation:</span> ${rep.elevation}m</div>` : ''}
+                <div><span class="popup-label">Cells Covered:</span> ${cellCount}</div>
                 ${rep.added_by ? `<div><span class="popup-label">Added by:</span> ${rep.added_by}</div>` : ''}
             </div>
         `);
 
-        repeaterContactLayer.addLayer(marker);
+        repeaterLayer.addLayer(marker);
     });
+
+    console.log(`Plotted ${repeaterContacts.length} repeater contacts`);
 }
 
 // ---------------------

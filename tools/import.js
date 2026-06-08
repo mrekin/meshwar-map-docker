@@ -111,10 +111,19 @@ try {
   // Actual import
   const result = db.insertSamples(samples, contributor, region);
   
+  // Import repeater contacts if present in unified export
+  let repeatersResult = { inserted: 0, updated: 0 };
+  if (!Array.isArray(data) && data.repeaters && Array.isArray(data.repeaters)) {
+    repeatersResult = db.importRepeaters(data.repeaters, contributor);
+  }
+  
   console.log(`Import complete:`);
-  console.log(`  Inserted: ${result.inserted}`);
-  console.log(`  Skipped:  ${result.skipped} (duplicates or GPS-only)`);
-  console.log(`  Total:    ${samples.length}`);
+  console.log(`  Samples inserted: ${result.inserted}`);
+  console.log(`  Samples skipped:  ${result.skipped} (duplicates or GPS-only)`);
+  console.log(`  Total samples:    ${samples.length}`);
+  if (repeatersResult.inserted > 0 || repeatersResult.updated > 0) {
+    console.log(`  Repeaters added:  ${repeatersResult.inserted} new, ${repeatersResult.updated} updated`);
+  }
   if (contributor) console.log(`  Contributor: ${contributor}`);
   if (region) console.log(`  Region: ${region}`);
   

@@ -10,8 +10,14 @@ const ALLOW_UPLOAD = process.env.ALLOW_UPLOAD === 'true';
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Serve static frontend
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Serve static frontend (no-cache for JS/CSS during development)
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.css') || filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  }
+}));
 
 // Serve map config (center, zoom) from environment variables
 app.get('/api/config', (req, res) => {
