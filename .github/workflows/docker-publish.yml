@@ -1,0 +1,102 @@
+name: Build & Publish Docker Image
+
+# Manual dispatch only. Choose which branch/tag to build from
+# and what tag to publish the image under.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch or git tag to build from (e.g. main, v1.2.0)"
+        required: true
+        default: "main"
+      tag:
+        description: "Image tag to publish (e.g. 1.2.0, manual-2026-07-20)"
+        required: true
+        default: "manual"
+      push_latest:
+        description: "Also tag the image as 'latest'"
+        type: boolean
+        required: false
+        default: true
+
+# Avoid two manual runs racing each other on the registry.
+concurrency:
+  group: docker-publish-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      # Validate inputs BEFORE using them in checkout ref / image tags.
+      # Inputs flow into a git ref and a Docker tag, so reject anything
+      # outside the allowed charset to prevent ref/shell-injection vectors.
+      - name: Validate inputs
+        env:
+          BRANCH: ${{ github.event.inputs.branch }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Git ref: letters, digits, and . _ / - (covers branches and tags)
+          if ! [[ "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+            echo "::error::Invalid 'branch' input: '$BRANCH' (allowed: A-Z a-z 0-9 . _ / -)"
+            exit 1
+          fi
+          # Docker tag: letters, digits, and . _ -
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "::error::Invalid 'tag' input: '$TAG' (allowed: A-Z a-z 0-9 . _ -)"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 1
+
+      - name: Set up QEMU (for arm64 cross-build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image tags
+        id: tags
+        env:
+          REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          PUSH_LATEST: ${{ github.event.inputs.push_latest }}
+        run: |
+          set -euo pipefail
+          # GHCR requires lowercase; lowercase defensively in case the repo is renamed.
+          IMAGE="${{ env.REGISTRY }}/$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')"
+          TAGS="${IMAGE}:${INPUT_TAG}"
+          if [ "$PUSH_LATEST" = "true" ]; then
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
