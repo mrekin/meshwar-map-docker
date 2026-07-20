@@ -7,6 +7,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./tools:/app/tools
+      - ./imports:/app/imports
     env_file:
       - .env
     restart: unless-stopped

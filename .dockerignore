@@ -3,3 +3,8 @@ data/meshwar.db
 data/meshwar.db-wal
 data/meshwar.db-shm
 data/processed/*.json
+# Never bake operator data files into the tools image layer
+tools/*.gpx
+tools/*.json
+tools/*.csv
+imports/*

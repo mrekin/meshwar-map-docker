@@ -2,8 +2,9 @@
 # MeshCore Wardrive Data Import Tool
 # Interactive script for vetted manual imports with validation.
 #
-# Usage: Place a single .json export file in the tools/ directory, then run:
-#   ./import.sh
+# Usage: Place a single .json export file in the imports/ directory, then run:
+#   bash tools/import.sh          (host)
+#   docker exec -it meshwar-map bash -c "cd /app/tools && bash import.sh"   (Docker)
 #
 # The script will:
 #   1. Validate the JSON file
@@ -12,22 +13,24 @@
 #   4. Import into the SQLite database
 #   5. Archive the file to data/processed/
 
-cd "$(dirname "$0")"
-
-TOOLS_DIR="$(pwd)"
-DATA_DIR="$(dirname "$TOOLS_DIR")/data"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # .../tools  (or /app/tools in container)
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"            # repo root  (or /app)
+IMPORTS_DIR="$ROOT_DIR/imports"                 # input files live here
+DATA_DIR="$ROOT_DIR/data"
 DB_PATH="$DATA_DIR/meshwar.db"
 
 export DB_PATH
 
+cd "$IMPORTS_DIR"
+
 # 1. Check for JSON files
 JSON_COUNT=$(ls -1 *.json 2>/dev/null | wc -l)
 if [ "$JSON_COUNT" -eq 0 ]; then
-    echo -e "\e[31m[ERROR] No .json files found in tools/ directory.\e[0m"
-    echo "  Place a wardrive export JSON file here and try again."
+    echo -e "\e[31m[ERROR] No .json files found in $IMPORTS_DIR.\e[0m"
+    echo "  Place a wardrive export JSON file there and try again."
     exit 1
 elif [ "$JSON_COUNT" -gt 1 ]; then
-    echo -e "\e[33m[ERROR] Multiple .json files detected. Please keep only ONE.\e[0m"
+    echo -e "\e[33m[ERROR] Multiple .json files detected in $IMPORTS_DIR. Please keep only ONE.\e[0m"
     ls -1 *.json
     exit 1
 fi
@@ -62,7 +65,7 @@ REGION=$(echo "$REGION" | tr '[:lower:]' '[:upper:]')
 
 # 3. Pre-Validation (Dry Run)
 echo -e "\n\e[34m[INFO] Validating data in $FILENAME...\e[0m"
-PINGS=$(node import.js "$FILENAME" --dry-run 2>&1)
+PINGS=$(node "$SCRIPT_DIR/import.js" "$FILENAME" --dry-run 2>&1)
 
 if [[ ! "$PINGS" =~ ^[0-9]+$ ]]; then
     echo -e "\e[31m[FAILED] Data Validation Error:\e[0m"
@@ -100,7 +103,7 @@ if [ -n "$REGION" ]; then
     IMPORT_ARGS="$IMPORT_ARGS --region $REGION"
 fi
 
-node import.js $IMPORT_ARGS
+node "$SCRIPT_DIR/import.js" $IMPORT_ARGS
 
 if [ $? -ne 0 ]; then
     echo -e "\e[31m[FAILED] Import failed. Check errors above.\e[0m"

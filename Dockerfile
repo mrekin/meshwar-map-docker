@@ -24,11 +24,15 @@ COPY --from=builder /app/server/node_modules ./server/node_modules
 # Copy application
 COPY server/ ./server/
 COPY public/ ./public/
-COPY tools/ ./tools/
+# Tools baked to a non-shadowed path; entrypoint seeds them into /app/tools.
+COPY tools/ /app/tools-image/
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create data directory
 RUN mkdir -p /app/data/processed
 
 EXPOSE 3000
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "server/index.js"]

@@ -34,14 +34,17 @@ Open http://localhost:3000 in your browser.
 
 ## Importing Data
 
+Input files for import go in the `imports/` directory (mounted at `/app/imports`
+in the container). See [`tools/README.md`](tools/README.md) for all import tools.
+
 ### Interactive Import (Recommended)
 
 1. Export data from the MeshCore Wardrive app (Settings > Export Data > JSON)
-2. Copy the JSON file to the `tools/` directory
+2. Copy the JSON file to the `imports/` directory
 3. Run the import script:
 
 ```bash
-cd tools && bash import.sh
+bash tools/import.sh
 
 # Or inside Docker:
 docker exec -it meshwar-map bash -c "cd /app/tools && bash import.sh"
@@ -50,10 +53,20 @@ docker exec -it meshwar-map bash -c "cd /app/tools && bash import.sh"
 ### Direct Import (Non-Interactive)
 
 ```bash
-node tools/import.js mydata.json --contributor Chuck --region WA
+node tools/import.js imports/mydata.json --contributor Chuck --region WA
 ```
 
 Options: `--dry-run`, `--contributor NAME`, `--region CODE`
+
+### Repeater Contacts (GPX)
+
+Import repeater true locations from a meshcore-open GPX export so "Show
+repeaters" and "Show Edges" work on the map:
+
+```bash
+docker exec -it meshwar-map node /app/tools/import-repeaters-gpx.js \
+  /app/imports/meshcore_repeaters.gpx --added-by mrekin
+```
 
 ### App Upload (Optional)
 

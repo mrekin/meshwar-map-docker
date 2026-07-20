@@ -90,6 +90,13 @@ map.on('popupopen', (e) => {
     e.popup.options.autoPanPaddingBottomRight = [16, 64];
 });
 
+// Clicking empty map area clears the selection (popup + lines).
+// selectCell sets suppressMapClickClear so a cell click is not treated as empty.
+map.on('click', () => {
+    if (suppressMapClickClear) { suppressMapClickClear = false; return; }
+    clearSelection();
+});
+
 updateMapTiles();
 updateThemeIcon();
 
@@ -99,6 +106,7 @@ updateThemeIcon();
 const coverageLayer = L.layerGroup().addTo(map);
 const repeaterLayer = L.layerGroup();
 const edgeLayer = L.layerGroup();
+const selectionLayer = L.layerGroup().addTo(map); // click-a-cell -> lines to its repeaters
 const heatmapLayer = L.layerGroup(); // Not added by default
 const measureLayer = L.layerGroup().addTo(map);
 
@@ -259,35 +267,8 @@ function renderVisibleCoverage() {
             dashArray: freshness.dashArray
         });
 
-        const successRate = cell.received + cell.lost > 0
-            ? ((cell.received / (cell.received + cell.lost)) * 100).toFixed(1)
-            : 0;
-
-        // Build repeaters popup HTML
-        let repeatersHtml = 'None';
-        if (cell.repeaters && typeof cell.repeaters === 'object') {
-            const repeaterList = Object.values(cell.repeaters).map(rep => {
-                const escapedName = (rep.name || 'Unknown').replace(/'/g, "\\'");
-                return `<span class="repeater-link" onclick="showRepeaterInfo('${escapedName}', ${rep.rssi}, ${rep.snr}, '${rep.lastSeen}')" title="Click for details">${rep.name}</span>`;
-            });
-            if (repeaterList.length > 0) repeatersHtml = repeaterList.join(', ');
-        }
-
-        rectangle.bindPopup(`
-            <div class="popup-content">
-                <div style="color: ${freshness.color}; font-weight: bold; margin-bottom: 8px;">
-                    ${freshness.label}
-                </div>
-                <div><span class="popup-label">Success Rate:</span> ${successRate}%</div>
-                <div><span class="popup-label">Received:</span> ${Math.round(cell.received)}</div>
-                <div><span class="popup-label">Lost:</span> ${Math.round(cell.lost)}</div>
-                <div><span class="popup-label">Samples:</span> ${cell.samples}</div>
-                <div><span class="popup-label">Repeaters:</span> ${repeatersHtml}</div>
-                <div style="font-size: 10px; color: #888; margin-top: 4px;">Click repeater name for signal details</div>
-                <div><span class="popup-label">Last Update:</span> ${new Date(cell.lastUpdate).toLocaleDateString()}</div>
-                ${cell.appVersion ? `<div><span class="popup-label">App Version:</span> ${cell.appVersion}</div>` : ''}
-            </div>
-        `);
+        // Click opens a standalone popup (survives map pan) + lines to its repeaters
+        rectangle.on('click', () => selectCell(hash, cell, cellBounds.getCenter()));
 
         coverageLayer.addLayer(rectangle);
         visibleRectangles[hash] = rectangle;
@@ -436,8 +417,11 @@ function toggleRepeaterLayer() {
     if (showRepeaters) {
         map.addLayer(repeaterLayer);
         updateRepeaterContactMarkers();
+        // Re-draw selection lines for the currently selected cell (if any)
+        if (selectedCell) drawCellRepeaterLines(selectedCellCenter, selectedCell);
     } else {
         map.removeLayer(repeaterLayer);
+        selectionLayer.clearLayers(); // hide lines when repeaters are off
     }
 }
 
@@ -503,6 +487,88 @@ function updateEdgeLines(aggregated) {
     });
 
     console.log(`Drew ${edgeCount} edge lines`);
+}
+
+// Find a repeater contact by node_id (match first 8 chars, uppercase)
+function findRepeaterContact(nodeId) {
+    const key = (nodeId.length > 8 ? nodeId.substring(0, 8) : nodeId).toUpperCase();
+    return repeaterContacts.find(r => {
+        const rk = (r.node_id.length > 8 ? r.node_id.substring(0, 8) : r.node_id).toUpperCase();
+        return rk === key;
+    });
+}
+
+// Draw lines from a clicked coverage cell to each repeater heard in it
+function drawCellRepeaterLines(cellPos, cell) {
+    selectionLayer.clearLayers();
+    if (!showRepeaters || !cell || !cell.repeaters) return;
+    Object.keys(cell.repeaters).forEach(nodeId => {
+        const contact = findRepeaterContact(nodeId);
+        if (!contact || (contact.latitude === 0 && contact.longitude === 0)) return;
+        selectionLayer.addLayer(L.polyline(
+            [[contact.latitude, contact.longitude], [cellPos.lat, cellPos.lng]],
+            { color: '#ffd166', weight: 2, opacity: 0.85, dashArray: '6, 6' }
+        ));
+    });
+}
+
+// --- Cell selection: standalone popup + repeater lines (survives map pan) ---
+let selectionPopup = null;
+let selectedCellHash = null;
+let selectedCell = null;
+let selectedCellCenter = null;
+let suppressMapClickClear = false;
+
+function cellPopupHtml(cell) {
+    const freshness = getFreshnessStatus(ageInDays(cell.lastUpdate));
+    const successRate = cell.received + cell.lost > 0
+        ? ((cell.received / (cell.received + cell.lost)) * 100).toFixed(1)
+        : 0;
+    let repeatersHtml = 'None';
+    if (cell.repeaters && typeof cell.repeaters === 'object') {
+        const list = Object.values(cell.repeaters).map(rep => {
+            const escapedName = (rep.name || 'Unknown').replace(/'/g, "\\'");
+            return `<span class="repeater-link" onclick="showRepeaterInfo('${escapedName}', ${rep.rssi}, ${rep.snr}, '${rep.lastSeen}')" title="Click for details">${rep.name}</span>`;
+        });
+        if (list.length > 0) repeatersHtml = list.join(', ');
+    }
+    return `
+        <div class="popup-content">
+            <div style="color: ${freshness.color}; font-weight: bold; margin-bottom: 8px;">${freshness.label}</div>
+            <div><span class="popup-label">Success Rate:</span> ${successRate}%</div>
+            <div><span class="popup-label">Received:</span> ${Math.round(cell.received)}</div>
+            <div><span class="popup-label">Lost:</span> ${Math.round(cell.lost)}</div>
+            <div><span class="popup-label">Samples:</span> ${cell.samples}</div>
+            <div><span class="popup-label">Repeaters:</span> ${repeatersHtml}</div>
+            <div style="font-size: 10px; color: #888; margin-top: 4px;">Click repeater name for signal details</div>
+            <div><span class="popup-label">Last Update:</span> ${new Date(cell.lastUpdate).toLocaleDateString()}</div>
+            ${cell.appVersion ? `<div><span class="popup-label">App Version:</span> ${cell.appVersion}</div>` : ''}
+        </div>
+    `;
+}
+
+// Open a standalone popup (not bound to the coverage rectangle, so it survives
+// viewport re-rendering on pan) and draw lines to the cell's repeaters.
+function selectCell(hash, cell, center) {
+    selectedCellHash = hash;
+    selectedCell = cell;
+    selectedCellCenter = center;
+    suppressMapClickClear = true;
+    if (selectionPopup) map.removeLayer(selectionPopup);
+    selectionPopup = L.popup({
+        maxWidth: 320,
+        closeOnClick: false,   // closing is managed via map click (clearSelection)
+        autoPan: true,
+    }).setLatLng(center).setContent(cellPopupHtml(cell)).openOn(map);
+    drawCellRepeaterLines(center, cell);
+}
+
+function clearSelection() {
+    if (selectionPopup) { map.removeLayer(selectionPopup); selectionPopup = null; }
+    selectionLayer.clearLayers();
+    selectedCellHash = null;
+    selectedCell = null;
+    selectedCellCenter = null;
 }
 
 // ---------------------
@@ -1140,18 +1206,15 @@ function updateRepeaterContactMarkers() {
     repeaterLayer.clearLayers();
     if (!showRepeaters || repeaterContacts.length === 0) return;
 
-    const mapBounds = map.getBounds();
-
     repeaterContacts.forEach(rep => {
         // Skip 0,0 positions
         if (rep.latitude === 0 && rep.longitude === 0) return;
-        if (!mapBounds.contains([rep.latitude, rep.longitude])) return;
 
         const icon = L.divIcon({
             className: 'repeater-marker-icon',
             html: '📡',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
+            iconSize: [36, 36],
+            iconAnchor: [18, 18]
         });
 
         // Count how many coverage cells heard this repeater

@@ -5,5 +5,9 @@ data/meshwar.db-shm
 data/processed/*.json
 .env
 tools/*.json
+tools/*.gpx
+imports/*
+!imports/.gitkeep
+repeaters/*.gpx
 *.log
-tools/*.json
+.claude/
