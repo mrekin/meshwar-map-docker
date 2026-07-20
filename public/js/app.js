@@ -19,6 +19,14 @@ function toggleTheme() {
     updateThemeIcon();
     updateMapTiles();
     localStorage.setItem('mapTheme', isDarkTheme ? 'dark' : 'light');
+
+    // Re-render lines so they pick up theme-aware colors.
+    if (showEdges && cachedCoverage) {
+        updateEdgeLines(aggregateAtPrecision(cachedCoverage, getEffectivePrecision()));
+    }
+    if (selectedCell && selectedCellCenter) {
+        drawCellRepeaterLines(selectedCellCenter, selectedCell);
+    }
 }
 
 function toggleInfoPanel() {
@@ -50,6 +58,21 @@ function updateMapTiles() {
     }
 
     tileLayer.addTo(map);
+}
+
+// Theme-aware styles for repeater edge/selection lines.
+// Dark theme uses bright tones (visible on dark map tiles);
+// light theme uses darker, higher-contrast tones (visible on light OSM tiles).
+function edgeLineStyle() {
+    return isDarkTheme
+        ? { color: '#bb86fc', weight: 1.5, opacity: 0.4, dashArray: '4, 6' }
+        : { color: '#6a1b9a', weight: 1.8, opacity: 0.6, dashArray: '4, 6' };
+}
+
+function selectionLineStyle() {
+    return isDarkTheme
+        ? { color: '#ffd166', weight: 2, opacity: 0.85, dashArray: '6, 6' }
+        : { color: '#e65100', weight: 2.5, opacity: 0.9, dashArray: '6, 6' };
 }
 
 // ---------------------
@@ -474,12 +497,7 @@ function updateEdgeLines(aggregated) {
             // Skip 0,0 repeater positions
             if (contact.latitude === 0 && contact.longitude === 0) return;
 
-            const line = L.polyline([repPos, cellPos], {
-                color: '#bb86fc',
-                weight: 1.5,
-                opacity: 0.4,
-                dashArray: '4, 6',
-            });
+            const line = L.polyline([repPos, cellPos], edgeLineStyle());
 
             edgeLayer.addLayer(line);
             edgeCount++;
@@ -507,7 +525,7 @@ function drawCellRepeaterLines(cellPos, cell) {
         if (!contact || (contact.latitude === 0 && contact.longitude === 0)) return;
         selectionLayer.addLayer(L.polyline(
             [[contact.latitude, contact.longitude], [cellPos.lat, cellPos.lng]],
-            { color: '#ffd166', weight: 2, opacity: 0.85, dashArray: '6, 6' }
+            selectionLineStyle()
         ));
     });
 }
