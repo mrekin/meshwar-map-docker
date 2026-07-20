@@ -75,9 +75,10 @@
         <div class="layer-toggles">
             <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #aaa;">Coverage Resolution</div>
             <select id="resolution-selector" onchange="changeResolution()" class="resolution-select">
+                <option value="auto" selected>Auto (follow zoom)</option>
                 <option value="4">Regional (~20km)</option>
                 <option value="5">City-level (~5km)</option>
-                <option value="6" selected>Neighborhood (~1.2km)</option>
+                <option value="6">Neighborhood (~1.2km)</option>
                 <option value="7">Street-level (~153m)</option>
             </select>
             <div style="font-size: 10px; color: #888; margin-top: 4px;">Max precision limited to street-level for privacy</div>

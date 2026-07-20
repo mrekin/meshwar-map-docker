@@ -181,9 +181,18 @@ function getFreshnessStatus(daysOld) {
 
 // Get appropriate precision for current zoom level
 function getPrecisionForZoom(zoom) {
+    if (zoom < 8) return 4;     // ~20km cells at country/regional zoom
     if (zoom < 10) return 5;    // ~5km cells at regional zoom
     if (zoom <= 12) return 6;   // ~1.2km cells at city zoom
     return 7;                   // ~153m cells when zoomed in
+}
+
+// Effective display precision: follows zoom in "Auto" mode, otherwise the
+// user-selected value. Replaces direct reads of the resolution selector.
+function getEffectivePrecision() {
+    const selector = document.getElementById('resolution-selector');
+    if (!selector || selector.value === 'auto') return getPrecisionForZoom(map.getZoom());
+    return parseInt(selector.value);
 }
 
 // ---------------------
@@ -203,18 +212,10 @@ function renderVisibleCoverage() {
 
     const mapBounds = map.getBounds();
     const zoom = map.getZoom();
-    const autoPrecision = getPrecisionForZoom(zoom);
+    const targetPrecision = getEffectivePrecision();
 
-    // Use manual resolution selector if user changed it, otherwise auto
-    const selector = document.getElementById('resolution-selector');
-    const manualPrecision = parseInt(selector.value);
-    const targetPrecision = manualPrecision;
-
-    // Re-aggregate at target precision if different from storage precision (7)
+    // Re-aggregate at target precision (Auto mode follows zoom; manual = selected value)
     const aggregated = aggregateAtPrecision(cachedCoverage, targetPrecision);
-
-    // Auto-adjust the resolution selector to match zoom if user hasn't manually changed it
-    // (We leave this to user control via the dropdown)
 
     // Clear existing rectangles
     coverageLayer.clearLayers();
@@ -371,7 +372,7 @@ function toggleHeatmapLayer() {
     if (showHeatmap) {
         map.addLayer(heatmapLayer);
         if (cachedCoverage) {
-            const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+            const aggregated = aggregateAtPrecision(cachedCoverage, getEffectivePrecision());
             updateHeatmap(aggregated);
         }
     } else {
@@ -445,7 +446,7 @@ function toggleEdgeLayer() {
     if (showEdges) {
         map.addLayer(edgeLayer);
         if (cachedCoverage) {
-            const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+            const aggregated = aggregateAtPrecision(cachedCoverage, getEffectivePrecision());
             updateEdgeLines(aggregated);
         }
     } else {
@@ -789,7 +790,7 @@ async function loadData() {
     }
     if (document.getElementById('toggle-edges').checked) {
         showEdges = true;
-        updateEdgeLines(aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value)));
+        updateEdgeLines(aggregateAtPrecision(cachedCoverage, getEffectivePrecision()));
     }
 
             if (timelapseActive) initTimelapse();
@@ -809,7 +810,7 @@ async function loadData() {
 // Resolution change handler
 // ---------------------
 function changeResolution() {
-    coveragePrecision = parseInt(document.getElementById('resolution-selector').value);
+    coveragePrecision = getEffectivePrecision();
     scheduleRender();
 }
 
@@ -1068,7 +1069,7 @@ function filterByContributor() {
 function filterByRepeater() {
     activeRepeaterFilter = document.getElementById('repeater-filter').value;
     if (showEdges && cachedCoverage) {
-        const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+        const aggregated = aggregateAtPrecision(cachedCoverage, getEffectivePrecision());
         updateEdgeLines(aggregated);
     }
 }
@@ -1129,7 +1130,7 @@ function loadRepeaterContacts() {
         repeaterContacts = data.repeaters || [];
         if (showRepeaters) updateRepeaterContactMarkers();
         if (showEdges && cachedCoverage) {
-            const aggregated = aggregateAtPrecision(cachedCoverage, parseInt(document.getElementById('resolution-selector').value));
+            const aggregated = aggregateAtPrecision(cachedCoverage, getEffectivePrecision());
             updateEdgeLines(aggregated);
         }
     }).catch(() => {});
