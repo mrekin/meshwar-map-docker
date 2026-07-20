@@ -1,11 +1,33 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const path = require('path');
 const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ALLOW_UPLOAD = process.env.ALLOW_UPLOAD === 'true';
+
+// Token guarding write endpoints. The wardrive client app can only put the
+// token in the URL, so we read it from ?token=... (header X-API-Key is also
+// accepted for other clients). Unset => writes stay open (back-compat).
+const UPLOAD_TOKEN = process.env.UPLOAD_TOKEN || '';
+
+function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function requireToken(req, res, next) {
+  if (!UPLOAD_TOKEN) return next();
+  const provided = req.query.token || req.get('X-API-Key') || '';
+  if (!provided || !timingSafeEqualStr(provided, UPLOAD_TOKEN)) {
+    return res.status(401).json({ error: 'Unauthorized: missing or invalid token (pass ?token=...)' });
+  }
+  next();
+}
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -53,7 +75,7 @@ app.get('/api/samples', (req, res) => {
 
 // ==================== POST /api/samples ====================
 // Accept uploads from the wardrive app (disabled by default)
-app.post('/api/samples', (req, res) => {
+app.post('/api/samples', requireToken, (req, res) => {
   if (!ALLOW_UPLOAD) {
     return res.status(403).json({ 
       error: 'Uploads disabled. Use the import tool or set ALLOW_UPLOAD=true.' 
@@ -120,7 +142,7 @@ app.get('/api/repeaters', (req, res) => {
 
 // ==================== POST /api/repeaters ====================
 // Import repeater contacts (JSON array)
-app.post('/api/repeaters', (req, res) => {
+app.post('/api/repeaters', requireToken, (req, res) => {
   try {
     const { repeaters } = req.body;
     
@@ -144,7 +166,7 @@ app.post('/api/repeaters', (req, res) => {
 });
 
 // ==================== DELETE /api/repeaters/:nodeId ====================
-app.delete('/api/repeaters/:nodeId', (req, res) => {
+app.delete('/api/repeaters/:nodeId', requireToken, (req, res) => {
   try {
     db.deleteRepeater(req.params.nodeId);
     res.json({ success: true });
@@ -162,6 +184,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  📊 Stats:   http://localhost:${PORT}/api/stats`);
   console.log(`  👥 Leaders: http://localhost:${PORT}/api/contributors`);
   console.log(`  📤 Upload:  ${ALLOW_UPLOAD ? 'ENABLED' : 'DISABLED (set ALLOW_UPLOAD=true to enable)'}`);
+  console.log(`  🔐 Token:   ${UPLOAD_TOKEN ? 'ENABLED (?token=... on write endpoints)' : 'disabled (writes open)'}`);
   console.log(`  💾 DB:      ${process.env.DB_PATH || 'data/meshwar.db'}`);
   console.log();
 });
