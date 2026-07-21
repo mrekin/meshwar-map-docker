@@ -203,11 +203,11 @@ function getCoverageColor(received, lost) {
 
 function getFreshnessStatus(daysOld) {
     if (daysOld <= 7) {
-        return { label: '🟢 Live Coverage', color: '#00ff00', opacity: 1.0, dashArray: null };
+        return { label: '🟢 Live Coverage', cls: 'freshness-live', opacity: 1.0, dashArray: null };
     } else if (daysOld <= 30) {
-        return { label: `🟡 Recent Coverage (${daysOld} days ago)`, color: '#ffff00', opacity: 0.8, dashArray: null };
+        return { label: `🟡 Recent Coverage (${daysOld} days ago)`, cls: 'freshness-recent', opacity: 0.8, dashArray: null };
     }
-    return { label: `⚪ Last Known Coverage (${daysOld} days ago)`, color: '#888888', opacity: 0.6, dashArray: '5, 5' };
+    return { label: `⚪ Last Known Coverage (${daysOld} days ago)`, cls: 'freshness-stale', opacity: 0.6, dashArray: '5, 5' };
 }
 
 // Get appropriate precision for current zoom level
@@ -530,12 +530,27 @@ function drawCellRepeaterLines(cellPos, cell) {
     });
 }
 
-// --- Cell selection: standalone popup + repeater lines (survives map pan) ---
-let selectionPopup = null;
+// --- Cell/repeater detail panel (bottom-left, survives map pan) + repeater lines ---
 let selectedCellHash = null;
 let selectedCell = null;
 let selectedCellCenter = null;
 let suppressMapClickClear = false;
+
+const detailPanel = document.getElementById('detail-panel');
+const detailTitle = document.getElementById('detail-panel-title');
+const detailBody = document.getElementById('detail-panel-body');
+
+// Render content into the bottom-left detail panel (used for cell + repeater info).
+function showDetailPanel(title, html) {
+    detailTitle.textContent = title;
+    detailBody.innerHTML = html;
+    detailPanel.classList.remove('hidden');
+}
+
+function hideDetailPanel() {
+    detailPanel.classList.add('hidden');
+    detailBody.innerHTML = '';
+}
 
 function cellPopupHtml(cell) {
     const freshness = getFreshnessStatus(ageInDays(cell.lastUpdate));
@@ -552,7 +567,7 @@ function cellPopupHtml(cell) {
     }
     return `
         <div class="popup-content">
-            <div style="color: ${freshness.color}; font-weight: bold; margin-bottom: 8px;">${freshness.label}</div>
+            <div class="freshness-label ${freshness.cls}">${freshness.label}</div>
             <div><span class="popup-label">Success Rate:</span> ${successRate}%</div>
             <div><span class="popup-label">Received:</span> ${Math.round(cell.received)}</div>
             <div><span class="popup-label">Lost:</span> ${Math.round(cell.lost)}</div>
@@ -565,24 +580,18 @@ function cellPopupHtml(cell) {
     `;
 }
 
-// Open a standalone popup (not bound to the coverage rectangle, so it survives
-// viewport re-rendering on pan) and draw lines to the cell's repeaters.
+// Show cell details in the bottom-left panel and draw lines to the cell's repeaters.
 function selectCell(hash, cell, center) {
     selectedCellHash = hash;
     selectedCell = cell;
     selectedCellCenter = center;
     suppressMapClickClear = true;
-    if (selectionPopup) map.removeLayer(selectionPopup);
-    selectionPopup = L.popup({
-        maxWidth: 320,
-        closeOnClick: false,   // closing is managed via map click (clearSelection)
-        autoPan: true,
-    }).setLatLng(center).setContent(cellPopupHtml(cell)).openOn(map);
+    showDetailPanel('Coverage Cell', cellPopupHtml(cell));
     drawCellRepeaterLines(center, cell);
 }
 
 function clearSelection() {
-    if (selectionPopup) { map.removeLayer(selectionPopup); selectionPopup = null; }
+    hideDetailPanel();
     selectionLayer.clearLayers();
     selectedCellHash = null;
     selectedCell = null;
@@ -1246,16 +1255,16 @@ function updateRepeaterContactMarkers() {
 
         const displayName = rep.name || rep.node_id;
         const marker = L.marker([rep.latitude, rep.longitude], { icon: icon });
-        marker.bindPopup(`
+        const repeaterHtml = `
             <div class="popup-content">
-                <div style="font-weight: bold; color: #00e676; margin-bottom: 8px;">📡 ${displayName}</div>
                 <div><span class="popup-label">Node ID:</span> ${rep.node_id}</div>
                 <div><span class="popup-label">Location:</span> ${rep.latitude.toFixed(5)}, ${rep.longitude.toFixed(5)}</div>
                 ${rep.elevation ? `<div><span class="popup-label">Elevation:</span> ${rep.elevation}m</div>` : ''}
                 <div><span class="popup-label">Cells Covered:</span> ${cellCount}</div>
                 ${rep.added_by ? `<div><span class="popup-label">Added by:</span> ${rep.added_by}</div>` : ''}
             </div>
-        `);
+        `;
+        marker.on('click', () => showDetailPanel(`📡 ${displayName}`, repeaterHtml));
 
         repeaterLayer.addLayer(marker);
     });

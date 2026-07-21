@@ -24,6 +24,15 @@
         <span class="theme-toggle-icon" id="theme-icon">☀️</span>
     </div>
 
+    <!-- Bottom-left detail panel: shows selected cell / repeater info -->
+    <div class="detail-panel hidden" id="detail-panel">
+        <div class="detail-panel-header">
+            <span class="detail-panel-title" id="detail-panel-title">Details</span>
+            <button class="detail-panel-close" onclick="clearSelection()" aria-label="Close">&times;</button>
+        </div>
+        <div class="detail-panel-body" id="detail-panel-body"></div>
+    </div>
+
     <div class="measure-control hidden" id="measure-control">
         <button class="measure-btn" id="measure-btn" onclick="toggleMeasure()">📏 Measure Distance</button>
         <div class="unit-selector">

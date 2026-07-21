@@ -49,7 +49,7 @@ body {
 .info-panel h2 {
     font-size: 18px;
     margin-bottom: 10px;
-    color: #00e676;
+    color: #e8eaed;
 }
 
 .stat {
@@ -129,7 +129,7 @@ body {
     left: 50%;
     transform: translate(-50%, -50%);
     font-size: 18px;
-    color: #00e676;
+    color: #e8eaed;
     z-index: 2000;
 }
 
@@ -191,15 +191,102 @@ body {
 
 /* Clickable repeater links */
 .repeater-link {
-    color: #00e676;
+    color: #60a5fa;
     cursor: pointer;
     text-decoration: underline;
     margin: 0 2px;
 }
 
 .repeater-link:hover {
-    color: #00ff88;
+    color: #93c5fd;
 }
+
+/* Bottom-left detail panel (selected cell / repeater info) */
+.detail-panel {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(30, 30, 30, 0.95);
+    color: #fff;
+    padding: 12px 14px;
+    border-radius: 8px;
+    z-index: 1000;
+    min-width: 240px;
+    max-width: 320px;
+    max-height: 50vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+.detail-panel.hidden {
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.detail-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+.detail-panel-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 700;
+    font-size: 14px;
+    color: #e8eaed;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.detail-panel-close {
+    flex: 0 0 auto;
+    background: transparent;
+    border: none;
+    color: #aaa;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    border-radius: 4px;
+}
+
+.detail-panel-close:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.1);
+}
+
+/* Let the injected .popup-content flow naturally inside the panel */
+.detail-panel-body .popup-content {
+    padding: 0;
+    max-height: none;
+    overflow: visible;
+}
+
+.detail-panel-body .popup-content div {
+    margin: 4px 0;
+}
+
+/* Freshness label (Live / Recent / Last Known) — readable, theme-aware */
+.freshness-label {
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.freshness-live { color: #4ade80; }
+.freshness-recent { color: #fbbf24; }
+.freshness-stale { color: #9ca3af; }
+
+body.light-theme .freshness-live { color: #15803d; }
+body.light-theme .freshness-recent { color: #b45309; }
+body.light-theme .freshness-stale { color: #6b7280; }
 
 /* Modal for repeater details */
 .modal {
@@ -258,7 +345,7 @@ body.modal-open { overflow: hidden; }
 .modal-title {
     font-size: 18px;
     font-weight: 600;
-    color: #00e676;
+    color: #e8eaed;
 }
 
 .modal-close {
@@ -401,7 +488,7 @@ body.modal-open { overflow: hidden; }
 .measure-distance {
     font-size: 18px;
     font-weight: 700;
-    color: #00e676;
+    color: #e8eaed;
     margin: 4px 0;
 }
 
@@ -474,7 +561,7 @@ body.modal-open { overflow: hidden; }
 .timelapse-title {
     font-size: 13px;
     font-weight: 600;
-    color: #00e676;
+    color: #e8eaed;
 }
 
 .timelapse-date {
@@ -529,7 +616,7 @@ body.light-theme .info-panel {
 }
 
 body.light-theme .info-panel h2 {
-    color: #00c853;
+    color: #1f1f1f;
 }
 
 body.light-theme .stat-label {
@@ -567,11 +654,34 @@ body.light-theme .popup-label {
 }
 
 body.light-theme .repeater-link {
-    color: #00c853;
+    color: #2563eb;
 }
 
 body.light-theme .repeater-link:hover {
-    color: #00a03e;
+    color: #1d4ed8;
+}
+
+body.light-theme .detail-panel {
+    background: rgba(255, 255, 255, 0.97);
+    color: #000;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+}
+
+body.light-theme .detail-panel-header {
+    border-bottom-color: rgba(0,0,0,0.12);
+}
+
+body.light-theme .detail-panel-title {
+    color: #1f1f1f;
+}
+
+body.light-theme .detail-panel-close {
+    color: #666;
+}
+
+body.light-theme .detail-panel-close:hover {
+    color: #000;
+    background: rgba(0,0,0,0.08);
 }
 
 body.light-theme .modal-content {
@@ -585,7 +695,7 @@ body.light-theme .modal-header {
 }
 
 body.light-theme .modal-title {
-    color: #00c853;
+    color: #1f1f1f;
 }
 
 body.light-theme .modal-close:hover {
@@ -627,7 +737,7 @@ body.light-theme .unit-btn:hover {
 }
 
 body.light-theme .measure-distance {
-    color: #00c853;
+    color: #1f1f1f;
 }
 
 body.light-theme .menu-button {
@@ -663,7 +773,7 @@ body.light-theme .timelapse-control {
 }
 
 body.light-theme .timelapse-title {
-    color: #00c853;
+    color: #1f1f1f;
 }
 
 body.light-theme .timelapse-date {
