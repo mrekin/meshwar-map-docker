@@ -93,6 +93,8 @@ L.control.zoom({ position: 'bottomleft' }).addTo(map);
 // Center map: try server config first, then browser geolocation, then default (Seattle)
 fetch('/api/config').then(r => r.json()).then(cfg => {
     map.setView(cfg.center, cfg.zoom);
+    const v = document.getElementById('app-version');
+    if (v && cfg.version) v.textContent = 'v' + cfg.version;
 }).catch(() => {});
 if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
@@ -1216,11 +1218,85 @@ function loadContributors() {
 }
 
 // ---------------------
+// Repeater GPX import (Tools panel)
+// ---------------------
+function onGpxFileSelected(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const out = document.getElementById('gpx-result');
+    out.className = 'gpx-result muted';
+    out.textContent = `Parsing ${file.name}…`;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        let parsed;
+        try {
+            parsed = parseGpx(reader.result);
+        } catch (e) {
+            out.className = 'gpx-result error';
+            out.textContent = 'Parse error: ' + e.message;
+            return;
+        }
+        const { repeaters, stats } = parsed;
+
+        if (!repeaters.length) {
+            out.className = 'gpx-result error';
+            out.innerHTML = `No importable Type:Repeater waypoints.<br>` +
+                `(${stats.waypoints} waypoints: ${stats.rooms} rooms/other, ${stats.noKey} no key, ${stats.malformed} malformed)`;
+            return;
+        }
+
+        const token = (document.getElementById('upload-token').value || '').trim();
+        const url = '/api/repeaters' + (token ? ('?token=' + encodeURIComponent(token)) : '');
+        out.textContent = `Uploading ${repeaters.length} repeaters…`;
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repeaters, addedBy: 'web-ui' }),
+        })
+            .then(r => r.json().then(j => ({ ok: r.ok, j })))
+            .then(({ ok, j }) => {
+                if (!ok) {
+                    out.className = 'gpx-result error';
+                    out.textContent = 'Error: ' + (j.error || 'upload failed');
+                    return;
+                }
+                out.className = 'gpx-result success';
+                // Coerce server-provided counts to integers: they're numbers in
+                // practice, but this neutralizes any unexpected string in the JSON.
+                const ins = Number(j.inserted) || 0;
+                const upd = Number(j.updated) || 0;
+                const tot = Number(j.total) || 0;
+                out.innerHTML =
+                    `<b>Inserted:</b> ${ins} &nbsp; <b>Updated:</b> ${upd} &nbsp; <b>Total:</b> ${tot}<br>` +
+                    `<span class="muted">Parsed: ${stats.repeaters} repeaters of ${stats.waypoints} waypoints ` +
+                    `(${stats.rooms} rooms/other, ${stats.noKey} no key, ${stats.malformed} malformed)</span>`;
+                loadRepeaterContacts(); // refresh markers + Repeater Edge Filter list
+            })
+            .catch(e => {
+                out.className = 'gpx-result error';
+                out.textContent = 'Network error: ' + e.message;
+            });
+    };
+    reader.onerror = () => {
+        out.className = 'gpx-result error';
+        out.textContent = 'Failed to read file.';
+    };
+    reader.readAsText(file);
+    input.value = ''; // allow re-selecting the same file
+}
+
+// ---------------------
 // Repeater contacts layer (true positions)
 // ---------------------
 function loadRepeaterContacts() {
     fetch('/api/repeaters').then(r => r.json()).then(data => {
         repeaterContacts = data.repeaters || [];
+        // Rebuild the repeater filter now that contact names are available
+        // (populateRepeaterFilter runs when coverage loads, but contacts may
+        // arrive later — without this the dropdown shows node_ids, not names).
+        populateRepeaterFilter();
         if (showRepeaters) updateRepeaterContactMarkers();
         if (showEdges && cachedCoverage) {
             const aggregated = aggregateAtPrecision(cachedCoverage, getEffectivePrecision());

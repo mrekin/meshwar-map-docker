@@ -11,3 +11,4 @@ imports/*
 repeaters/*.gpx
 *.log
 .claude/
+nodered/

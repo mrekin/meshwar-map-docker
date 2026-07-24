@@ -866,3 +866,76 @@ body.light-theme .timelapse-btn:hover {
     color: #fff;
     border-color: #00c853;
 }
+
+/* ===== App version badge (info panel header) ===== */
+.app-version {
+    font-size: 11px;
+    color: #888;
+    font-weight: 400;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+/* ===== Tools panel: GPX import section ===== */
+.tools-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.15);
+    margin: 12px 0 10px;
+}
+
+.tool-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #aaa;
+    margin-bottom: 6px;
+}
+
+.token-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.token-input::placeholder {
+    color: #888;
+}
+
+.gpx-result {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.gpx-result.muted { color: #888; }
+.gpx-result.success { color: #00e676; }
+.gpx-result.error { color: #ff5252; }
+
+.muted { color: #888; }
+
+/* Light theme overrides */
+body.light-theme .app-version { color: #999; }
+
+body.light-theme .tools-divider {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+body.light-theme .tool-section-title { color: #666; }
+
+body.light-theme .token-input {
+    background: rgba(0, 0, 0, 0.05);
+    color: #000;
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light-theme .token-input::placeholder { color: #999; }
+
+body.light-theme .gpx-result.muted { color: #777; }
+body.light-theme .gpx-result.success { color: #00a152; }
+body.light-theme .gpx-result.error { color: #c00; }

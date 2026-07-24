@@ -68,6 +68,12 @@ docker exec -it meshwar-map node /app/tools/import-repeaters-gpx.js \
   /app/imports/meshcore_repeaters.gpx --added-by mrekin
 ```
 
+#### Automate via Node-RED (test)
+
+Import repeaters automatically from a Telegram bot: send a `.gpx` file to the
+bot and it parses and posts to `POST /api/repeaters`. A ready-to-import flow and
+setup instructions are in [`nodered/`](nodered/README.md).
+
 ### App Upload (Optional)
 
 Set `ALLOW_UPLOAD=true` in docker-compose.yml, then add your server as an upload endpoint in the app: `http://your-server:3000/api/samples`
@@ -80,6 +86,9 @@ Only enable on trusted networks — there is no authentication.
 - `POST /api/samples` — Upload samples (requires ALLOW_UPLOAD=true)
 - `GET /api/stats` — Global statistics
 - `GET /api/contributors` — Contributor leaderboard
+- `GET /api/repeaters` — List repeater contacts
+- `POST /api/repeaters` — Import repeater contacts as JSON (requires token)
+- `DELETE /api/repeaters/:nodeId` — Delete a repeater (requires token)
 
 ## Configuration
 

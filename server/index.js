@@ -3,6 +3,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
 const db = require('./db');
+const pkg = require('./package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +50,7 @@ app.get('/api/config', (req, res) => {
       parseFloat(process.env.MAP_CENTER_LON || '-122.3321'),
     ],
     zoom: parseInt(process.env.MAP_ZOOM || '10'),
+    version: pkg.version,
   });
 });
 

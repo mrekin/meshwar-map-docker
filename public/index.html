@@ -45,10 +45,17 @@
             <div style="font-size: 11px; color: #aaa;">Distance</div>
             <div class="measure-distance" id="measure-distance">0 km</div>
         </div>
+
+        <div class="tools-divider"></div>
+        <div class="tool-section-title">Repeater Import (GPX)</div>
+        <input type="password" id="upload-token" class="token-input" placeholder="Upload token" autocomplete="off">
+        <input type="file" id="gpx-file-input" accept=".gpx,application/gpx+xml,application/xml,text/xml" onchange="onGpxFileSelected(this)" style="display:none">
+        <button class="measure-btn" onclick="document.getElementById('gpx-file-input').click()">📡 Load Repeaters (GPX)</button>
+        <div class="gpx-result" id="gpx-result"></div>
     </div>
 
     <div class="info-panel hidden" id="info-panel">
-        <h2>📡 MeshCore Wardrive</h2>
+        <h2>📡 MeshCore Wardrive <span class="app-version" id="app-version"></span></h2>
         <div class="stat">
             <span class="stat-label">Total Samples:</span>
             <span class="stat-value" id="total-samples">0</span>
@@ -112,7 +119,7 @@
         </div>
 
         <div class="layer-toggles">
-            <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #aaa;">Repeater Filter</div>
+            <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #aaa;">Repeater Edge Filter</div>
             <select id="repeater-filter" onchange="filterByRepeater()" class="resolution-select">
                 <option value="">All Repeaters</option>
             </select>
@@ -193,6 +200,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script src="js/geohash.js"></script>
+    <script src="js/gpx.js"></script>
     <script src="js/app.js"></script>
     <script>document.getElementsByClassName( 'leaflet-control-attribution' )[0].style.display = 'none';</script>
 </body>
