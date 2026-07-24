@@ -12,3 +12,4 @@ repeaters/*.gpx
 *.log
 .claude/
 nodered/
+data/tiles/

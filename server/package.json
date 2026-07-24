@@ -1,6 +1,6 @@
 {
   "name": "meshwar-map-docker",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Self-hosted MeshCore Wardrive Map with SQLite backend",
   "main": "index.js",
   "scripts": {

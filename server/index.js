@@ -3,6 +3,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
 const db = require('./db');
+const tiles = require('./tiles');
 const pkg = require('./package.json');
 
 const app = express();
@@ -42,6 +43,10 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   }
 }));
 
+// Map tile proxy — on-disk cache + upstream failover. See server/tiles.js.
+// Tiles live under data/tiles/ (on the persisted data volume).
+app.use('/tiles', tiles);
+
 // Serve map config (center, zoom) from environment variables
 app.get('/api/config', (req, res) => {
   res.json({
@@ -51,6 +56,7 @@ app.get('/api/config', (req, res) => {
     ],
     zoom: parseInt(process.env.MAP_ZOOM || '10'),
     version: pkg.version,
+    tileCache: tiles.config,
   });
 });
 
