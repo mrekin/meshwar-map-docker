@@ -103,6 +103,7 @@ cp .env.example .env   # First time setup
 - `DB_PATH` (default: /app/data/meshwar.db) — Database path
 - `MAP_CENTER_LAT` / `MAP_CENTER_LON` — Default map center
 - `MAP_ZOOM` — Default zoom level
+- Map tile cache (`TILE_*`) — backend tile proxy, disk cache, optional SOCKS5 upstream; see `.env.example`
 
 ## Reverse Proxy
 
@@ -119,6 +120,54 @@ server {
     }
 }
 ```
+
+### Caddy
+
+Caddy obtains and renews HTTPS certificates automatically. Minimal `Caddyfile`
+(Caddy on the host → `localhost:3000`; Caddy in the same Docker network →
+`meshwar-map:3000`):
+
+```caddyfile
+map.yourdomain.com {
+	reverse_proxy localhost:3000
+
+	# Stop your server from being used as a public tile CDN: block tile
+	# requests coming from OTHER sites (hotlinking), allow your own site
+	# and direct/no-referer access. Replace the domain with yours.
+	@hotlink {
+		path /tiles/*
+		header Referer *
+		not header Referer map.yourdomain.com
+	}
+	respond @hotlink 403
+}
+```
+
+Stricter — also block direct/no-referer access (note: this can break tiles for
+users with Referer-stripping browser extensions): drop the `header Referer *`
+line, so any request whose Referer doesn't match your domain is blocked.
+
+For a semi-private map, allow tiles only from known networks instead of by
+referer:
+
+```caddyfile
+map.yourdomain.com {
+	@tiles path /tiles/*
+	handle @tiles {
+		@allowed remote_ip 10.0.0.0/8 192.168.0.0/16 172.16.0.0/12
+		handle @allowed {
+			reverse_proxy localhost:3000
+		}
+		respond 403
+	}
+	handle {
+		reverse_proxy localhost:3000
+	}
+}
+```
+
+> Edge protection only works if Caddy is the sole entry point — don't expose
+> port 3000 directly to the internet.
 
 ## Data Storage
 

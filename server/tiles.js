@@ -20,6 +20,8 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const zlib = require('zlib');
+const http = require('http');
+const https = require('https');
 
 const router = express.Router();
 
@@ -33,6 +35,21 @@ const PRUNE_MIN_INTERVAL_MS = Math.max(1, parseInt(process.env.TILE_PRUNE_INTERV
 
 const ROOT = path.join(__dirname, '..', 'data', 'tiles');
 if (CACHE_ENABLED) fs.mkdirSync(ROOT, { recursive: true });
+
+// ---- upstream SOCKS5 proxy (optional) ----
+// When TILE_UPSTREAM_PROXY is set (e.g. socks5h://user:pass@host:1080), upstream
+// tile fetches (CARTO/OSM) are tunneled through it. Empty/absent = direct.
+// Requires the "socks-proxy-agent" npm package; falls back to direct if missing.
+const PROXY_URL = process.env.TILE_UPSTREAM_PROXY || '';
+let proxyAgent = undefined;
+if (PROXY_URL) {
+  try {
+    const { SocksProxyAgent } = require('socks-proxy-agent');
+    proxyAgent = new SocksProxyAgent(PROXY_URL);
+  } catch (e) {
+    console.error(`[tiles] TILE_UPSTREAM_PROXY set but "socks-proxy-agent" not installed; using direct. (${e.message})`);
+  }
+}
 
 // ---- blank tile (last resort), generated in memory, no deps ----
 function crc32(buf) {
@@ -77,16 +94,26 @@ function upstreams(theme, z, x, y) {
     `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
   ];
 }
-async function fetchOne(url) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'meshwar-tile-proxy/1.0' } });
-    if (!r.ok) return null;
-    const buf = Buffer.from(await r.arrayBuffer());
-    return buf.length ? buf : null;
-  } catch { return null; }
-  finally { clearTimeout(t); }
+function fetchOne(url) {
+  // Uses node http/https + an optional agent so the same path works direct or
+  // through a SOCKS5 proxy (agent = undefined => direct connection).
+  return new Promise((resolve) => {
+    let settled = false, req;
+    const t = setTimeout(() => { settled = true; try { req.destroy(); } catch {} resolve(null); }, FETCH_TIMEOUT_MS);
+    const finish = (v) => { if (settled) return; settled = true; clearTimeout(t); resolve(v); };
+    try {
+      req = (url.startsWith('https:') ? https : http).get(url, {
+        agent: proxyAgent,
+        headers: { 'User-Agent': 'meshwar-tile-proxy/1.0' },
+      }, (res) => {
+        if (res.statusCode !== 200) { res.resume(); return finish(null); }
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => { const b = Buffer.concat(chunks); finish(b.length ? b : null); });
+      });
+      req.on('error', () => finish(null));
+    } catch { finish(null); }
+  });
 }
 async function fetchWithFailover(theme, z, x, y) {
   for (const u of upstreams(theme, z, x, y)) {
@@ -193,5 +220,5 @@ router.get('/:theme/:z/:x/:y.png', async (req, res) => {
   res.type('png').send(BLANK[theme]);
 });
 
-router.config = { enabled: CACHE_ENABLED, ttlDays: TTL_MS / 864e5, maxMb: MAX_BYTES / 1e6 };
+router.config = { enabled: CACHE_ENABLED, ttlDays: TTL_MS / 864e5, maxMb: MAX_BYTES / 1e6, upstreamProxy: !!proxyAgent };
 module.exports = router;
