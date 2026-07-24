@@ -1,7 +1,10 @@
 name: Build & Publish Docker Image
 
 # Manual dispatch only. Choose which branch/tag to build from
-# and what tag to publish the image under.
+# and what tag to publish the image under. Each architecture is built as a
+# separate single-platform image with its own tag:
+#   amd64 -> <tag>      (+ latest      if push_latest)
+#   arm64 -> <tag>-arm64 (+ latest-arm64 if push_latest)
 on:
   workflow_dispatch:
     inputs:
@@ -10,19 +13,14 @@ on:
         required: true
         default: "main"
       tag:
-        description: "Image tag to publish (e.g. 1.2.0, manual-2026-07-20)"
+        description: "Image tag to publish (e.g. 1.3.0, manual-2026-07-20)"
         required: true
         default: "manual"
       push_latest:
-        description: "Also tag the image as 'latest'"
+        description: "Also tag as 'latest' / 'latest-arm64'"
         type: boolean
         required: false
         default: true
-
-# Avoid two manual runs racing each other on the registry.
-concurrency:
-  group: docker-publish-${{ github.event.inputs.tag }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -34,6 +32,23 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Build each arch as its own job: they run in parallel, and an arm64
+    # failure (QEMU cross-build is fragile) won't cancel the amd64 publish.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            suffix: ""
+            cache_scope: amd64
+          - platform: linux/arm64
+            suffix: "-arm64"
+            cache_scope: arm64
+    # One slot per (tag, arch): arches of the same dispatch run concurrently,
+    # while two dispatches sharing a tag+arch serialize instead of racing.
+    concurrency:
+      group: docker-publish-${{ github.event.inputs.tag }}-${{ matrix.platform }}
+      cancel-in-progress: false
     steps:
       # Validate inputs BEFORE using them in checkout ref / image tags.
       # Inputs flow into a git ref and a Docker tag, so reject anything
@@ -80,23 +95,25 @@ jobs:
           REPO: ${{ github.repository }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
           PUSH_LATEST: ${{ github.event.inputs.push_latest }}
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
           # GHCR requires lowercase; lowercase defensively in case the repo is renamed.
           IMAGE="${{ env.REGISTRY }}/$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')"
-          TAGS="${IMAGE}:${INPUT_TAG}"
+          TAGS="${IMAGE}:${INPUT_TAG}${SUFFIX}"
           if [ "$PUSH_LATEST" = "true" ]; then
-            TAGS="${TAGS},${IMAGE}:latest"
+            TAGS="${TAGS},${IMAGE}:latest${SUFFIX}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push (linux/amd64, linux/arm64)
+      - name: Build and push (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scope the cache per arch so arm64 never reuses amd64 layer cache.
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
