@@ -345,12 +345,20 @@ function filterSamples(samples) {
       const total = survivors.length;
       const dominant = comps.length > 1 && largest.length / total >= DOMINANT_FRACTION;
       const keepSize = largest.length * KEEP_RATIO;
+      // Within a session a real point must be reachable from the main track at a
+      // plausible speed. A separate component farther than the session's time span
+      // allows is unreachable → a glitch. (Catches far blobs in SMALL sessions,
+      // where the relative keep-size rule alone is too loose.)
+      const largestCenter = largest.length ? { lat: median(largest.map((p) => p.lat)), lon: median(largest.map((p) => p.lon)) } : null;
+      const spanSec = session.length > 1 ? (session[session.length - 1].t - session[0].t) / 1000 : 0;
+      const maxReachKm = Math.max(MIN_OUTLIER_KM, (spanSec * MAX_SPEED_KMH) / 3600);
       for (let i = 0; i < comps.length; i++) {
         const c = comps[i];
-        const dropComp = dominant && i !== 0 && c.length < keepSize;
+        const ctr = { lat: median(c.map((p) => p.lat)), lon: median(c.map((p) => p.lon)) };
+        const far = largestCenter ? haversineKm(ctr, largestCenter) > maxReachKm : false;
+        const dropComp = dominant && i !== 0 && (c.length < keepSize || far);
         if (dropComp) for (const p of c) dropped.add(p.s);
         if (compMetas) {
-          const ctr = { lat: median(c.map((p) => p.lat)), lon: median(c.map((p) => p.lon)) };
           compMetas.push({
             contributor, session: true, points: c.length, largest: i === 0, kept: !dropComp,
             center: { lat: +ctr.lat.toFixed(5), lon: +ctr.lon.toFixed(5) },
