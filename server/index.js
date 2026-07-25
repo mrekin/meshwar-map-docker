@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const path = require('path');
 const db = require('./db');
 const tiles = require('./tiles');
+const gpsFilter = require('./gpsfilter');
 const pkg = require('./package.json');
 
 const app = express();
@@ -57,6 +58,7 @@ app.get('/api/config', (req, res) => {
     zoom: parseInt(process.env.MAP_ZOOM || '10'),
     version: pkg.version,
     tileCache: tiles.config,
+    gpsFilter: gpsFilter.config,
   });
 });
 
@@ -99,12 +101,18 @@ app.post('/api/samples', requireToken, (req, res) => {
     
     const result = db.insertSamples(samples);
     const stats = db.getGlobalStats();
-    
+
+    // One-line ingest summary so filter activity is visible in the server logs.
+    if (result.rejected > 0) {
+      console.log(`[upload] rejected ${result.rejected} GPS outlier sample(s) of ${samples.length} received (inserted=${result.inserted}, deduped=${result.skipped})`);
+    }
+
     res.json({
       success: true,
       samplesReceived: samples.length,
       samplesProcessed: result.inserted,
       samplesDeduped: result.skipped,
+      samplesRejected: result.rejected,
       totalCells: stats.totalCells,
     });
   } catch (err) {
@@ -193,6 +201,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  👥 Leaders: http://localhost:${PORT}/api/contributors`);
   console.log(`  📤 Upload:  ${ALLOW_UPLOAD ? 'ENABLED' : 'DISABLED (set ALLOW_UPLOAD=true to enable)'}`);
   console.log(`  🔐 Token:   ${UPLOAD_TOKEN ? 'ENABLED (?token=... on write endpoints)' : 'disabled (writes open)'}`);
+  console.log(`  🛰️  Filter:  ${gpsFilter.config.enabled ? `ENABLED (rejects GPS outliers >${gpsFilter.config.maxSpeedKmh} km/h jumps)` : 'disabled'}`);
   console.log(`  💾 DB:      ${process.env.DB_PATH || 'data/meshwar.db'}`);
   console.log();
 });

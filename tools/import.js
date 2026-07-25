@@ -120,6 +120,7 @@ try {
   console.log(`Import complete:`);
   console.log(`  Samples inserted: ${result.inserted}`);
   console.log(`  Samples skipped:  ${result.skipped} (duplicates or GPS-only)`);
+  console.log(`  Samples rejected: ${result.rejected} (GPS outliers)`);
   console.log(`  Total samples:    ${samples.length}`);
   if (repeatersResult.inserted > 0 || repeatersResult.updated > 0) {
     console.log(`  Repeaters added:  ${repeatersResult.inserted} new, ${repeatersResult.updated} updated`);

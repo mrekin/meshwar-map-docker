@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const geohash = require('./geohash');
+const gpsFilter = require('./gpsfilter');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'meshwar.db');
 
@@ -149,23 +150,26 @@ function getCoverage(contributorFilter = null) {
 
 /**
  * Insert samples from an upload or import.
- * Deduplicates by sample_id.
- * Returns { inserted, skipped }
+ * Deduplicates by sample_id. Drops GPS outliers via the pre-pass filter.
+ * Returns { inserted, skipped, rejected }
  */
 function insertSamples(samples, contributor = null, region = null) {
   const d = getDb();
   const importDate = new Date().toISOString();
-  
+
+  // Pre-pass: drop GPS outliers (implausible-speed excursions + optional bbox).
+  const { samples: clean, rejected } = gpsFilter.filterSamples(samples);
+
   const insert = d.prepare(`
-    INSERT OR IGNORE INTO samples 
-    (sample_id, geohash, node_id, latitude, longitude, rssi, snr, 
+    INSERT OR IGNORE INTO samples
+    (sample_id, geohash, node_id, latitude, longitude, rssi, snr,
      ping_success, timestamp, app_version, contributor, import_date, region)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  
+
   let inserted = 0;
   let skipped = 0;
-  
+
   const tx = d.transaction((samples) => {
     for (const s of samples) {
       const lat = s.latitude || s.lat;
@@ -203,8 +207,8 @@ function insertSamples(samples, contributor = null, region = null) {
     }
   });
   
-  tx(samples);
-  return { inserted, skipped };
+  tx(clean);
+  return { inserted, skipped, rejected };
 }
 
 /**

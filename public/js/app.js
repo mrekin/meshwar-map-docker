@@ -6,6 +6,10 @@
 // ---------------------
 let isDarkTheme = true;
 let tileLayer = null;
+// Route map tiles through the backend proxy (on-disk cache + CARTO→OSM failover)
+// or straight from the CDN. Set from /api/config (tileCache.enabled); defaults to
+// the proxy until the config arrives.
+let tileProxyEnabled = true;
 
 const savedTheme = localStorage.getItem('mapTheme') || 'dark';
 if (savedTheme === 'light') {
@@ -41,20 +45,25 @@ function updateThemeIcon() {
     document.getElementById('theme-icon').textContent = isDarkTheme ? '☀️' : '🌙';
 }
 
+function tileSource(theme) {
+    // Backend proxy enabled: route through /tiles (disk cache + CARTO→OSM failover).
+    // Disabled: fetch straight from the CARTO CDN so the backend isn't on the path.
+    if (tileProxyEnabled) {
+        return { url: `/tiles/${theme}/{z}/{x}/{y}.png`, subdomains: 'abc' };
+    }
+    const layer = theme === 'dark' ? 'dark_all' : 'light_all';
+    return { url: `https://{s}.basemaps.cartocdn.com/${layer}/{z}/{x}/{y}.png`, subdomains: 'abcd' };
+}
+
 function updateMapTiles() {
     if (tileLayer) map.removeLayer(tileLayer);
 
-    if (isDarkTheme) {
-        tileLayer = L.tileLayer('/tiles/dark/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            maxZoom: 19
-        });
-    } else {
-        tileLayer = L.tileLayer('/tiles/light/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            maxZoom: 19
-        });
-    }
+    const { url, subdomains } = tileSource(isDarkTheme ? 'dark' : 'light');
+    tileLayer = L.tileLayer(url, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains,
+        maxZoom: 19
+    });
 
     tileLayer.addTo(map);
 }
@@ -94,6 +103,12 @@ fetch('/api/config').then(r => r.json()).then(cfg => {
     map.setView(cfg.center, cfg.zoom);
     const v = document.getElementById('app-version');
     if (v && cfg.version) v.textContent = 'v' + cfg.version;
+    // Cache disabled → load tiles straight from the CDN, bypassing the backend.
+    const useProxy = !(cfg.tileCache && cfg.tileCache.enabled === false);
+    if (useProxy !== tileProxyEnabled) {
+        tileProxyEnabled = useProxy;
+        updateMapTiles();
+    }
 }).catch(() => {});
 if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
@@ -553,7 +568,7 @@ function hideDetailPanel() {
     detailBody.innerHTML = '';
 }
 
-function cellPopupHtml(cell) {
+function cellPopupHtml(cell, center) {
     const freshness = getFreshnessStatus(ageInDays(cell.lastUpdate));
     const successRate = cell.received + cell.lost > 0
         ? ((cell.received / (cell.received + cell.lost)) * 100).toFixed(1)
@@ -569,6 +584,7 @@ function cellPopupHtml(cell) {
     return `
         <div class="popup-content">
             <div class="freshness-label ${freshness.cls}">${freshness.label}</div>
+            <div><span class="popup-label">Coordinates:</span> ${center && Number.isFinite(center.lat) ? `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}` : '—'}</div>
             <div><span class="popup-label">Success Rate:</span> ${successRate}%</div>
             <div><span class="popup-label">Received:</span> ${Math.round(cell.received)}</div>
             <div><span class="popup-label">Lost:</span> ${Math.round(cell.lost)}</div>
@@ -587,7 +603,7 @@ function selectCell(hash, cell, center) {
     selectedCell = cell;
     selectedCellCenter = center;
     suppressMapClickClear = true;
-    showDetailPanel('Coverage Cell', cellPopupHtml(cell));
+    showDetailPanel('Coverage Cell', cellPopupHtml(cell, center));
     drawCellRepeaterLines(center, cell);
 }
 

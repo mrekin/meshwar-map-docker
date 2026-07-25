@@ -13,3 +13,4 @@ repeaters/*.gpx
 .claude/
 nodered/
 data/tiles/
+data/debug/

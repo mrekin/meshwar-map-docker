@@ -1,11 +1,12 @@
 {
   "name": "meshwar-map-docker",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Self-hosted MeshCore Wardrive Map with SQLite backend",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "import": "node ../tools/import.js"
+    "import": "node ../tools/import.js",
+    "test": "node --test"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

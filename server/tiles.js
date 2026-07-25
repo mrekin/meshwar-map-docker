@@ -29,7 +29,7 @@ const router = express.Router();
 const CACHE_ENABLED = (process.env.TILE_CACHE_ENABLED ?? 'true') !== 'false';
 const TTL_MS = Math.max(1, parseInt(process.env.TILE_TTL_DAYS) || 30) * 864e5;
 const MAX_BYTES = Math.max(1, parseInt(process.env.TILE_MAX_MB) || 500) * 1e6;
-const NEG_TTL_MS = 10 * 60e3;       // remember "all upstreams failed" for this long
+const UPSTREAM_COOLDOWN_MS = 30e3;  // fast-fail cache misses while all upstreams are unreachable
 const FETCH_TIMEOUT_MS = 6000;      // per-upstream timeout
 const PRUNE_MIN_INTERVAL_MS = Math.max(1, parseInt(process.env.TILE_PRUNE_INTERVAL_SEC) || 15) * 1000; // min gap between eviction walks (only on new writes)
 
@@ -78,7 +78,7 @@ const BLANK = { dark: solidPng(20, 20, 20), light: solidPng(225, 225, 225) };
 
 // ---- runtime state ----
 const inflight = new Map();  // key -> Promise  (dedup parallel fetches)
-const neg = new Map();       // key -> expiry ms (short-lived, in-memory)
+let upstreamDownUntil = 0;   // while in the future, skip upstream and serve blank on cache miss
 let totalBytes = null;       // unknown until first eviction walk reconciles it
 let pruneAt = 0, pruning = false;
 
@@ -140,6 +140,7 @@ async function writeTile(theme, z, x, y, buf) {
 function backgroundRefresh(theme, z, x, y) {
   const key = keyFor(theme, z, x, y);
   if (inflight.has(key)) return;
+  if (Date.now() < upstreamDownUntil) return; // upstream unreachable — skip refresh
   const p = fetchWithFailover(theme, z, x, y)
     .then(buf => { if (buf) return writeTile(theme, z, x, y, buf); })
     .finally(() => inflight.delete(key));
@@ -190,8 +191,6 @@ router.get('/:theme/:z/:x/:y.png', async (req, res) => {
   if (!Number.isInteger(zi) || zi < 0 || zi > 19 || xi < 0 || yi < 0) return res.status(404).end();
   res.set('Cache-Control', 'public, max-age=31536000, immutable');
 
-  const key = keyFor(theme, zi, xi, yi);
-
   // 1) Cached? Serve always (stale-while-error); refresh in background if stale.
   if (CACHE_ENABLED) {
     try {
@@ -204,19 +203,22 @@ router.get('/:theme/:z/:x/:y.png', async (req, res) => {
     } catch { /* miss */ }
   }
 
-  // 2) Negative cache still active? Serve blank without hitting upstreams.
-  const ne = neg.get(key);
-  if (ne && ne > Date.now()) return res.type('png').send(BLANK[theme]);
+  // 2) Upstream known unreachable? Fast-fail this cache miss to a blank tile.
+  //    The cooldown is GLOBAL (not per-tile) and clears on the first successful
+  //    fetch, so no tile gets "stuck" blank after the upstream recovers.
+  if (Date.now() < upstreamDownUntil) return res.type('png').send(BLANK[theme]);
 
   // 3) Live fetch with failover.
   const buf = await fetchWithFailover(theme, zi, xi, yi);
   if (buf) {
+    upstreamDownUntil = 0;  // upstream healthy again — clear the cooldown
     if (CACHE_ENABLED) writeTile(theme, zi, xi, yi, buf).catch(() => {});
     return res.type('png').send(buf);
   }
 
-  // 4) All upstreams down -> blank + short negative cache.
-  neg.set(key, Date.now() + NEG_TTL_MS);
+  // 4) All upstreams failed -> blank + global cooldown (>= one failover cycle,
+  //    so concurrent misses don't launch overlapping probes). Self-heals ~30s.
+  upstreamDownUntil = Date.now() + UPSTREAM_COOLDOWN_MS;
   res.type('png').send(BLANK[theme]);
 });
 
