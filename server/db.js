@@ -175,10 +175,11 @@ function insertSamples(samples, opts) {
   const importDate = new Date().toISOString();
 
   // Pre-pass: drop GPS outliers (implausible-speed excursions + optional bbox).
-  // Skipped when the caller passes an already-filtered set (prefiltered).
+  // Skipped when the caller passes an already-filtered set (prefiltered=true);
+  // then `samples` IS the filtered set, so use it directly.
   let clean, rejected;
   if (prefiltered) {
-    clean = prefiltered;
+    clean = samples;
     rejected = 0;
   } else {
     ({ samples: clean, rejected } = gpsFilter.filterSamples(samples));
