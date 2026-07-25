@@ -7,4 +7,6 @@ data/processed/*.json
 tools/*.gpx
 tools/*.json
 tools/*.csv
+# Never bake operator config into the image (bind-mounted at runtime instead)
+config/meshwar.yaml
 imports/*

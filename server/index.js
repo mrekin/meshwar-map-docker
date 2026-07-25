@@ -2,18 +2,21 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
+const config = require('./config');
 const db = require('./db');
 const tiles = require('./tiles');
 const gpsFilter = require('./gpsfilter');
+const forwarders = require('./forwarders');
 const pkg = require('./package.json');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const ALLOW_UPLOAD = process.env.ALLOW_UPLOAD === 'true';
+const PORT = process.env.PORT || 3000;                     // env: docker-compose needs it for host port mapping
+const ALLOW_UPLOAD = config.server.allow_upload === true;  // config/meshwar.yaml: server.allow_upload
 
 // Token guarding write endpoints. The wardrive client app can only put the
 // token in the URL, so we read it from ?token=... (header X-API-Key is also
-// accepted for other clients). Unset => writes stay open (back-compat).
+// accepted for other clients). Unset => writes stay open (back-compat). This is
+// a SECRET, so it stays in .env (never in the YAML).
 const UPLOAD_TOKEN = process.env.UPLOAD_TOKEN || '';
 
 function timingSafeEqualStr(a, b) {
@@ -48,17 +51,15 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
 // Tiles live under data/tiles/ (on the persisted data volume).
 app.use('/tiles', tiles);
 
-// Serve map config (center, zoom) from environment variables
+// Serve map config (center, zoom) from config/meshwar.yaml
 app.get('/api/config', (req, res) => {
   res.json({
-    center: [
-      parseFloat(process.env.MAP_CENTER_LAT || '47.6062'),
-      parseFloat(process.env.MAP_CENTER_LON || '-122.3321'),
-    ],
-    zoom: parseInt(process.env.MAP_ZOOM || '10'),
+    center: [config.map.center_lat, config.map.center_lon],
+    zoom: config.map.zoom,
     version: pkg.version,
     tileCache: tiles.config,
     gpsFilter: gpsFilter.config,
+    forwarders: forwarders.config,
   });
 });
 
@@ -87,24 +88,34 @@ app.get('/api/samples', (req, res) => {
 // Accept uploads from the wardrive app (disabled by default)
 app.post('/api/samples', requireToken, (req, res) => {
   if (!ALLOW_UPLOAD) {
-    return res.status(403).json({ 
-      error: 'Uploads disabled. Use the import tool or set ALLOW_UPLOAD=true.' 
+    return res.status(403).json({
+      error: 'Uploads disabled. Use the import tool or set server.allow_upload: true in config/meshwar.yaml.'
     });
   }
   
   try {
     const { samples } = req.body;
-    
+
     if (!samples || !Array.isArray(samples)) {
       return res.status(400).json({ error: 'Invalid request: samples array required' });
     }
-    
-    const result = db.insertSamples(samples);
+
+    // Filter GPS outliers once here, then pass the clean set both to the DB
+    // (prefiltered, so it skips its own filter pass) and to the forwarders —
+    // external resources get the SAME filtered samples we keep.
+    const { samples: clean, rejected } = gpsFilter.filterSamples(samples);
+    const result = db.insertSamples(clean, { prefiltered: true });
     const stats = db.getGlobalStats();
 
     // One-line ingest summary so filter activity is visible in the server logs.
-    if (result.rejected > 0) {
-      console.log(`[upload] rejected ${result.rejected} GPS outlier sample(s) of ${samples.length} received (inserted=${result.inserted}, deduped=${result.skipped})`);
+    if (result.rejected > 0 || rejected > 0) {
+      console.log(`[upload] rejected ${rejected} GPS outlier sample(s) of ${samples.length} received (inserted=${result.inserted}, deduped=${result.skipped})`);
+    }
+
+    // Forward the filtered samples to external resources, if any are configured.
+    // Fire-and-forget: runs in the background, never affects this response.
+    if (clean.length && forwarders.config.count > 0) {
+      forwarders.forwardSamples(clean).catch((e) => console.error('[forwarders] unexpected:', e.message));
     }
 
     res.json({
@@ -199,10 +210,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  📡 API:     http://localhost:${PORT}/api/samples`);
   console.log(`  📊 Stats:   http://localhost:${PORT}/api/stats`);
   console.log(`  👥 Leaders: http://localhost:${PORT}/api/contributors`);
-  console.log(`  📤 Upload:  ${ALLOW_UPLOAD ? 'ENABLED' : 'DISABLED (set ALLOW_UPLOAD=true to enable)'}`);
+  console.log(`  📤 Upload:  ${ALLOW_UPLOAD ? 'ENABLED' : 'DISABLED (set server.allow_upload: true in config/meshwar.yaml)'}`);
   console.log(`  🔐 Token:   ${UPLOAD_TOKEN ? 'ENABLED (?token=... on write endpoints)' : 'disabled (writes open)'}`);
   console.log(`  🛰️  Filter:  ${gpsFilter.config.enabled ? `ENABLED (rejects GPS outliers >${gpsFilter.config.maxSpeedKmh} km/h jumps)` : 'disabled'}`);
-  console.log(`  💾 DB:      ${process.env.DB_PATH || 'data/meshwar.db'}`);
+  console.log(`  📤 Forward: ${forwarders.config.count > 0 ? `ENABLED (${forwarders.config.count} resource(s))` : 'disabled'}`);
+  console.log(`  💾 DB:      ${config.storage.db_path || 'data/meshwar.db'}`);
   console.log();
 });
 

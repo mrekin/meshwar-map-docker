@@ -31,29 +31,32 @@
 // straddling two batches is analysed per half — safe, but a seam glitch may be
 // missed. Bridging batches needs server-side state (future option).
 //
-// Config: env vars (see .env.example). Master switch: GPS_FILTER_ENABLED.
-// Diagnostics: GPS_FILTER_DEBUG=true logs per-session stats; GPS_DUMP_BATCHES=true
-// writes every batch (raw + verdict + per-component diagnostics) to data/debug/samples/.
+// Config: the gps_filter section of config/meshwar.yaml (see config/meshwar.example.yaml).
+// Master switch: gps_filter.enabled. Diagnostics: gps_filter.debug logs per-session
+// stats; gps_filter.dump_batches writes every batch (raw + verdict + per-component
+// diagnostics) to data/debug/samples/.
 
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const config = require('./config');
 
-// ---- config (env) ----
-const ENABLED = (process.env.GPS_FILTER_ENABLED ?? 'true') !== 'false';
-const FALLBACK_INTERVAL_SEC = Math.max(1, parseFloat(process.env.GPS_SAMPLE_INTERVAL_SEC) || 25); // only used when interval can't be estimated from data
-const MAX_SPEED_KMH = Math.max(1, parseFloat(process.env.GPS_MAX_SPEED_KMH) || 150);
-const MIN_GROUP_SIZE = Math.max(1, parseInt(process.env.GPS_MIN_GROUP_SIZE) || 3); // smaller components skip the spike pass
-const KEEP_RATIO = Math.min(0.9, Math.max(0.1, parseFloat(process.env.GPS_FILTER_MAX_FRACTION) || 0.5)); // keep a component if its size >= this * largest
-const MIN_OUTLIER_KM = Math.max(0, parseFloat(process.env.GPS_MIN_OUTLIER_KM) || 0.5); // floor on a plausible step (short-cadence jitter guard)
-const GROUP_GAP_FACTOR = Math.max(1, parseFloat(process.env.GPS_GROUP_GAP_FACTOR) || 3); // a time gap > interval*factor starts a new session
+// ---- config (config/meshwar.yaml, via server/config.js) ----
+const gf = config.gps_filter;
+const ENABLED = gf.enabled !== false;
+const FALLBACK_INTERVAL_SEC = Math.max(1, Number(gf.sample_interval_sec) || 25); // only used when interval can't be estimated from data
+const MAX_SPEED_KMH = Math.max(1, Number(gf.max_speed_kmh) || 150);
+const MIN_GROUP_SIZE = Math.max(1, parseInt(gf.min_group_size) || 3); // smaller components skip the spike pass
+const KEEP_RATIO = Math.min(0.9, Math.max(0.1, Number(gf.keep_fraction) || 0.5)); // keep a component if its size >= this * largest
+const MIN_OUTLIER_KM = Math.max(0, Number(gf.min_outlier_km) || 0.5); // floor on a plausible step (short-cadence jitter guard)
+const GROUP_GAP_FACTOR = Math.max(1, Number(gf.group_gap_factor) || 3); // a time gap > interval*factor starts a new session
 const DOMINANT_FRACTION = 0.35; // largest component must be >= this share of points to be trusted as the real track
 const WINDOW_SAMPLES = 8; // bridge brief GPS dropouts: link a point to a plausible partner up to this many samples ahead
 const MERGE_FACTOR = 3; // merge components whose centroids are within threshold*MERGE_FACTOR (reunites a real track split by glitches)
-const BBOX = parseBbox(process.env.GPS_BBOX || '');
-const DEBUG = (process.env.GPS_FILTER_DEBUG ?? 'false') === 'true';
-const DUMP = (process.env.GPS_DUMP_BATCHES ?? 'false') === 'true';
+const BBOX = parseBbox(gf.bbox || '');
+const DEBUG = gf.debug === true;
+const DUMP = gf.dump_batches === true;
 const DUMP_DIR = path.join(__dirname, '..', 'data', 'debug', 'samples');
 if (DUMP) fs.mkdirSync(DUMP_DIR, { recursive: true });
 let dumpSeq = 0;
@@ -215,7 +218,7 @@ function logComponentDebug(contributor, total, comps, dropped, intervalMs, thres
   });
 }
 
-// When GPS_DUMP_BATCHES=true, write every incoming batch to data/debug/samples/
+// When gps_filter.dump_batches: true, write every incoming batch to data/debug/samples/
 // as JSON: raw samples + per-sample verdict + per-component diagnostics.
 //
 // Filename = sha256(raw samples), so re-uploading the SAME batch overwrites the

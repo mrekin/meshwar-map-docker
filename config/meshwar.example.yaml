@@ -1,0 +1,171 @@
+# ============================================================================
+# MeshCore Wardrive Map — configuration
+# ============================================================================
+# Copy this file to meshwar.yaml and customize:
+#   cp config/meshwar.example.yaml config/meshwar.yaml
+#
+# This file holds every BEHAVIORAL setting, grouped by section. Only three
+# things stay in .env (see .env.example):
+#   PORT          — server port (docker-compose needs it for host port mapping)
+#   CONFIG_PATH   — path to this file (optional; default config/meshwar.yaml)
+#   UPLOAD_TOKEN  — secret auth token for write endpoints
+#
+# EVERY key below has a safe default. If a key (or this whole file) is missing
+# or empty, the default shown is used. Comment a line out or delete it to keep
+# the default. A malformed file is logged and ignored — the app always boots.
+#
+# In Docker this file lives at /app/config/meshwar.yaml (the ./config host dir
+# is mounted as a volume). host: ./config/   container: /app/config/
+# ============================================================================
+
+
+# ---- Server ----------------------------------------------------------------
+server:
+  # Allow the wardrive app to upload directly to POST /api/samples? (default false)
+  # false = use the import tool instead; true = the app can POST samples.
+  allow_upload: false
+
+
+# ---- Map defaults ----------------------------------------------------------
+map:
+  # Where the map opens. Set to your region.
+  center_lat: 47.6062
+  center_lon: -122.3321
+  zoom: 10
+
+
+# ---- Storage ---------------------------------------------------------------
+storage:
+  # SQLite database path. Leave empty ("") to use the default location:
+  #   host:      ./data/meshwar.db
+  #   container: /app/data/meshwar.db
+  # Set only if you want a custom path.
+  db_path: ""
+
+
+# ---- Map tile cache (backend proxy) ----------------------------------------
+# Map tiles are fetched through the server (CARTO subdomains -> OSM fallback)
+# and, when enabled, cached to disk. Cached tiles are served even when the CDN
+# is unreachable (stale-while-error) and refreshed in the background once stale.
+#
+# Cache location (on the persisted data volume, alongside meshwar.db):
+#   host:      ./data/tiles/
+#   container: /app/data/tiles/
+tiles:
+  # Cache tiles on the backend disk? (default true)
+  # false = relay tiles through the server without caching; failover + blank tile
+  #         still work, but nothing is stored and every request hits the upstream.
+  cache_enabled: true
+
+  # Days a cached tile is considered fresh. After this it is still served at once
+  # and refreshed in the background (stale-while-revalidate). (default 30)
+  ttl_days: 30
+
+  # Maximum disk usage for the tile cache, in MB. When exceeded, the oldest tiles
+  # are evicted asynchronously (at most one directory walk per prune_interval_sec,
+  # on new writes). (default 500)
+  max_mb: 500
+
+  # Minimum seconds between cache-eviction directory walks. A walk only runs when
+  # a new tile is written AND more than this many seconds have passed since the
+  # last one. Lower = tighter disk cap (more disk I/O); higher = less I/O, may
+  # briefly exceed max_mb. (default 15)
+  prune_interval_sec: 15
+
+  # Route upstream tile fetches (CARTO/OSM) through a SOCKS5 proxy. Empty ("") =
+  # direct (default). Use socks5h:// to resolve DNS through the proxy (avoids a
+  # local DNS leak). Requires the "socks-proxy-agent" npm package in server/.
+  # Example:  socks5h://user:pass@host:1080
+  upstream_proxy: ""
+
+
+# ---- GPS sample outlier filter ---------------------------------------------
+# Wardrive GPS sometimes glitches: a sample's coordinates jump ~10 km away for
+# 1-3 samples, then return. These "broken" samples pollute the coverage map.
+# The filter runs on every upload/import and drops them BEFORE they reach the DB.
+# Counted in samplesRejected (API response / import log). Stored data untouched.
+#
+# How it works (time sessions, then connectivity):
+#   - A batch is ~100 samples and may span several drives. The contributor's
+#     stream is split into SESSIONS by time gap (a long gap = a new drive) and
+#     each session is filtered on its own — never across a gap. That stops a
+#     glitch in a long-span batch being bridged to a real track hours away.
+#   - Within a session, real movement is continuous: each sample is reachable
+#     from the next at a plausible speed (distance <= gap_s * max_speed_kmh). A
+#     glitch is a teleport (thousands of km/h) -> not connected.
+#   - Two passes per session: (1) spike — drop a point far from BOTH neighbours
+#     while they stay close ("went out and came back"); (2) components — the real
+#     track is the large connected component, glitch blobs are small/far blobs.
+#   - A blob is dropped when a real track is identifiable (largest >= ~35% of the
+#     session) AND it is either much smaller than the largest OR farther from it
+#     than the session's time span allows (unreachable = glitch). No cap on route
+#     length, so a long walk/drive is always kept.
+#   - Limitation: per-batch (~100). A session where the GPS is wrong the WHOLE
+#     time (e.g. a different city) looks like one valid blob and is kept — use bbox.
+gps_filter:
+  # Master switch. false = pass everything through unfiltered. (default true)
+  enabled: true
+
+  # Fallback sampling cadence (seconds), used ONLY when it can't be estimated
+  # from the data (e.g. a single sample). Normally the real cadence is detected.
+  # (default 25)
+  sample_interval_sec: 25
+
+  # Max plausible speed (km/h) between samples. Two samples are "connected" only
+  # if the step between them is reachable at this speed. Wardriving is well under
+  # 150; a glitch (~10 km in one interval) implies thousands of km/h -> not
+  # connected. (default 150)
+  max_speed_kmh: 150
+
+  # A gap longer than cadence x this factor starts a new session (a new drive).
+  # (default 3)
+  group_gap_factor: 3
+
+  # Sessions smaller than this many samples are kept as-is (too little to analyse).
+  # (default 3)
+  min_group_size: 3
+
+  # A blob is kept if its size is at least this fraction of the LARGEST blob (so
+  # a real track split in two by a glitch is kept, small glitch blobs dropped).
+  # 0.1 - 0.9. (default 0.5)
+  keep_fraction: 0.5
+
+  # Floor on the drop distance, in km, so a very short cadence can't over-filter.
+  # (default 0.5)
+  min_outlier_km: 0.5
+
+  # Log per-session stats and dropped points (for tuning on real data). Off by
+  # default to keep logs quiet. (default false)
+  debug: false
+
+  # Dump EVERY incoming sample batch to data/debug/samples/ as JSON: raw samples
+  # + per-sample verdict (kept/rejected + reason + distance for outliers) + per-
+  # blob diagnostics (center/size/kept). Turn on, reproduce, then turn off. Files
+  # are written on the persisted data volume (host: ./data/debug/samples/).
+  # (default false)
+  dump_batches: false
+
+  # Optional geographic fence: drop any sample outside this bounding box, given
+  # as "minLongitude,minLatitude,maxLongitude,maxLatitude". Empty ("") = accept
+  # the whole world (default). Example (roughly continental USA): "-125,24,-66,50"
+  bbox: ""
+
+
+# ---- Sample forwarding (optional) ------------------------------------------
+# After a successful upload the server already filters GPS outliers and saves the
+# clean samples to its own DB. When forwarding is configured, those SAME filtered
+# samples are also POSTed to one or more external resources (another instance of
+# this server, or any service speaking the same /api/samples protocol). Forwarding
+# is read once at boot, runs in the background after the upload response is sent,
+# never throws, and one failed resource does not affect the others or the upload.
+#
+# The token is NOT a separate field — the wardrive upload protocol carries it in
+# the query string (?token=...), so it simply lives in the url. An entry without
+# a url, or a non-http(s) url, is skipped. An empty/missing list = forwarding off.
+#
+#   forwarders:
+#     - name: community-map
+#       url: https://map.example.org/api/samples?token=replace-with-your-token
+#     - name: backup
+#       url: http://10.0.0.5:3000/api/samples
+forwarders: []

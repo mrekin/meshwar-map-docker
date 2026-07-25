@@ -2,17 +2,17 @@
 //
 // Frontend always loads tiles through /tiles/:theme/:z/:x/:y.png. The proxy:
 //   - rotates CARTO subdomains and falls back CARTO -> ... -> OSM on failure;
-//   - when TILE_CACHE_ENABLED=true: caches tiles on disk, serves them even when
+//   - when tiles.cache_enabled: caches tiles on disk, serves them even when
 //     stale (stale-while-error), refreshes expired tiles in the background
 //     (stale-while-revalidate), and evicts oldest tiles when the cache exceeds
-//     TILE_MAX_MB (asynchronously, at request time);
-//   - when TILE_CACHE_ENABLED=false: stateless relay, nothing is written to disk
+//     tiles.max_mb (asynchronously, at request time);
+//   - when tiles.cache_enabled: false: stateless relay, nothing is written to disk
 //     (failover + in-memory blank/negative cache still apply);
 //   - last resort (all upstreams down, no cached copy): a solid blank tile.
 //
 // Cache metadata is the filesystem itself: a tile's mtime is its cached-at time
 // (TTL = now - mtime). Total size is summed by an async directory walk, which is
-// throttled to at most once per TILE_PRUNE_INTERVAL_SEC (default 15s) and only
+// throttled to at most once per tiles.prune_interval_sec (default 15s) and only
 // triggered when a new tile is written.
 
 const express = require('express');
@@ -22,32 +22,34 @@ const path = require('path');
 const zlib = require('zlib');
 const http = require('http');
 const https = require('https');
+const config = require('./config');
 
 const router = express.Router();
 
-// ---- config (env) ----
-const CACHE_ENABLED = (process.env.TILE_CACHE_ENABLED ?? 'true') !== 'false';
-const TTL_MS = Math.max(1, parseInt(process.env.TILE_TTL_DAYS) || 30) * 864e5;
-const MAX_BYTES = Math.max(1, parseInt(process.env.TILE_MAX_MB) || 500) * 1e6;
+// ---- config (config/meshwar.yaml, via server/config.js) ----
+const tc = config.tiles;
+const CACHE_ENABLED = tc.cache_enabled !== false;
+const TTL_MS = Math.max(1, Number(tc.ttl_days) || 30) * 864e5;
+const MAX_BYTES = Math.max(1, Number(tc.max_mb) || 500) * 1e6;
 const UPSTREAM_COOLDOWN_MS = 30e3;  // fast-fail cache misses while all upstreams are unreachable
 const FETCH_TIMEOUT_MS = 6000;      // per-upstream timeout
-const PRUNE_MIN_INTERVAL_MS = Math.max(1, parseInt(process.env.TILE_PRUNE_INTERVAL_SEC) || 15) * 1000; // min gap between eviction walks (only on new writes)
+const PRUNE_MIN_INTERVAL_MS = Math.max(1, Number(tc.prune_interval_sec) || 15) * 1000; // min gap between eviction walks (only on new writes)
 
 const ROOT = path.join(__dirname, '..', 'data', 'tiles');
 if (CACHE_ENABLED) fs.mkdirSync(ROOT, { recursive: true });
 
 // ---- upstream SOCKS5 proxy (optional) ----
-// When TILE_UPSTREAM_PROXY is set (e.g. socks5h://user:pass@host:1080), upstream
+// When tiles.upstream_proxy is set (e.g. socks5h://user:pass@host:1080), upstream
 // tile fetches (CARTO/OSM) are tunneled through it. Empty/absent = direct.
 // Requires the "socks-proxy-agent" npm package; falls back to direct if missing.
-const PROXY_URL = process.env.TILE_UPSTREAM_PROXY || '';
+const PROXY_URL = tc.upstream_proxy || '';
 let proxyAgent = undefined;
 if (PROXY_URL) {
   try {
     const { SocksProxyAgent } = require('socks-proxy-agent');
     proxyAgent = new SocksProxyAgent(PROXY_URL);
   } catch (e) {
-    console.error(`[tiles] TILE_UPSTREAM_PROXY set but "socks-proxy-agent" not installed; using direct. (${e.message})`);
+    console.error(`[tiles] tiles.upstream_proxy set but "socks-proxy-agent" not installed; using direct. (${e.message})`);
   }
 }
 

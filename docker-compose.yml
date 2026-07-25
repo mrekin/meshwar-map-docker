@@ -8,6 +8,7 @@ services:
       - ./data:/app/data
       - ./tools:/app/tools
       - ./imports:/app/imports
+      - ./config:/app/config
     env_file:
       - .env
     restart: unless-stopped

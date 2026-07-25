@@ -1,21 +1,36 @@
 // Tests for the GPS outlier filter (server/gpsfilter.js).
 // Run with: npm test  (uses Node's built-in test runner — no extra deps).
 //
-// Env is read at module load, so we pin deterministic values before the first
-// require and re-require with different env for the bbox / disabled cases.
+// Config is read from config/meshwar.yaml (via server/config.js) at module load,
+// so we pin deterministic values via a temp YAML + CONFIG_PATH before the first
+// require, and re-require with a different YAML for the bbox / disabled cases.
+// A real config/meshwar.yaml may exist on disk, so EVERY case (incl. the default
+// require) points CONFIG_PATH at a controlled temp file.
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
-// Deterministic default config before first require.
-process.env.GPS_FILTER_ENABLED = 'true';
-process.env.GPS_SAMPLE_INTERVAL_SEC = '25'; // fallback only; interval is estimated from data
-process.env.GPS_MAX_SPEED_KMH = '150';
-process.env.GPS_GROUP_GAP_FACTOR = '3';
-process.env.GPS_MIN_GROUP_SIZE = '3';
-process.env.GPS_FILTER_MAX_FRACTION = '0.5';
-process.env.GPS_MIN_OUTLIER_KM = '0.5';
-delete process.env.GPS_BBOX;
+const CONFIG = require.resolve('../config');
+const FILTER = require.resolve('../gpsfilter');
+
+// Deterministic default config for the top-level require.
+const DEFAULT_YAML = `
+gps_filter:
+  enabled: true
+  sample_interval_sec: 25
+  max_speed_kmh: 150
+  group_gap_factor: 3
+  min_group_size: 3
+  keep_fraction: 0.5
+  min_outlier_km: 0.5
+  bbox: ""
+`;
+const TMP_DEFAULT = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')), 'meshwar.yaml');
+fs.writeFileSync(TMP_DEFAULT, DEFAULT_YAML);
+process.env.CONFIG_PATH = TMP_DEFAULT;
 
 const filter = require('../gpsfilter');
 
@@ -32,22 +47,23 @@ function pt(lat, lon, sec, extra = {}) {
   };
 }
 
-/** Re-require the module with a custom env, run fn(module), then restore env. */
-function withEnv(env, fn) {
-  const prev = {};
-  for (const k of Object.keys(env)) {
-    prev[k] = process.env[k];
-    process.env[k] = env[k];
-  }
-  delete require.cache[require.resolve('../gpsfilter')];
+/** Re-require config + gpsfilter against a temp YAML holding `yaml`, run fn(module), restore. */
+function withConfig(yaml, fn) {
+  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')), 'meshwar.yaml');
+  if (yaml !== undefined) fs.writeFileSync(tmp, yaml);
+  const prev = process.env.CONFIG_PATH;
+  process.env.CONFIG_PATH = tmp;
+  delete require.cache[CONFIG];
+  delete require.cache[FILTER];
   const mod = require('../gpsfilter');
   try {
     return fn(mod);
   } finally {
-    for (const k of Object.keys(env)) {
-      if (prev[k] === undefined) delete process.env[k];
-      else process.env[k] = prev[k];
-    }
+    if (prev === undefined) delete process.env.CONFIG_PATH;
+    else process.env.CONFIG_PATH = prev;
+    delete require.cache[CONFIG];
+    delete require.cache[FILTER];
+    try { fs.rmSync(path.dirname(tmp), { recursive: true, force: true }); } catch {}
   }
 }
 
@@ -158,8 +174,8 @@ test('tiny session (< MIN_GROUP_SIZE) is left untouched', () => {
   assert.strictEqual(r.samples.length, 2);
 });
 
-test('optional GPS_BBOX drops samples outside the configured region', () => {
-  withEnv({ GPS_BBOX: '-122.5,47.5,-122.1,47.7' }, (f) => {
+test('optional gps_filter.bbox drops samples outside the configured region', () => {
+  withConfig('gps_filter:\n  bbox: "-122.5,47.5,-122.1,47.7"\n', (f) => {
     const samples = [
       pt(47.6, -122.3, 0, { id: 'k0' }), // inside
       pt(40.7, -74.0, 25, { id: 'k1' }), // outside → rejected
@@ -171,8 +187,8 @@ test('optional GPS_BBOX drops samples outside the configured region', () => {
   });
 });
 
-test('GPS_FILTER_ENABLED=false passes everything through untouched', () => {
-  withEnv({ GPS_FILTER_ENABLED: 'false' }, (f) => {
+test('gps_filter.enabled=false passes everything through untouched', () => {
+  withConfig('gps_filter:\n  enabled: false\n', (f) => {
     const samples = [
       pt(47.6, -122.3, 0, { id: 'm0' }),
       pt(47.69, -122.3, 25, { id: 'm1' }),

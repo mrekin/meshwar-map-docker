@@ -13,9 +13,8 @@
 const path = require('path');
 const fs = require('fs');
 
-if (!process.env.DB_PATH) {
-  process.env.DB_PATH = path.join(__dirname, '..', 'data', 'meshwar.db');
-}
+// db.js resolves the DB path from config/meshwar.yaml (storage.db_path),
+// falling back to data/meshwar.db — no env var needed.
 const db = require('../server/db');
 
 const args = process.argv.slice(2);

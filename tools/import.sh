@@ -17,9 +17,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # .../tools  (or /app/tools in con
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"            # repo root  (or /app)
 IMPORTS_DIR="$ROOT_DIR/imports"                 # input files live here
 DATA_DIR="$ROOT_DIR/data"
-DB_PATH="$DATA_DIR/meshwar.db"
-
-export DB_PATH
 
 cd "$IMPORTS_DIR"
 

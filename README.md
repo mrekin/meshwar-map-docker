@@ -8,7 +8,8 @@ Self-hosted version of the MeshCore wardrive coverage map. Runs locally with SQL
 ```bash
 git clone https://github.com/mintylinux/meshwar-map-docker.git
 cd meshwar-map-docker
-cp .env.example .env    # Create your config (edit as needed)
+cp .env.example .env                                  # port + secret token
+cp config/meshwar.example.yaml config/meshwar.yaml    # behavioral settings (edit as needed)
 docker-compose up -d
 ```
 
@@ -76,14 +77,16 @@ setup instructions are in [`nodered/`](nodered/README.md).
 
 ### App Upload (Optional)
 
-Set `ALLOW_UPLOAD=true` in docker-compose.yml, then add your server as an upload endpoint in the app: `http://your-server:3000/api/samples`
+Set `server.allow_upload: true` in `config/meshwar.yaml`, then add your server as
+an upload endpoint in the app: `http://your-server:3000/api/samples`
 
-Only enable on trusted networks — there is no authentication.
+Write endpoints are guarded by `UPLOAD_TOKEN` (`.env`) — pass it as `?token=...`
+in the URL. Leave `UPLOAD_TOKEN` empty only on trusted networks (writes stay open).
 
 ## API Endpoints
 
 - `GET /api/samples` — Coverage data for the map
-- `POST /api/samples` — Upload samples (requires ALLOW_UPLOAD=true)
+- `POST /api/samples` — Upload samples (requires `server.allow_upload: true`)
 - `GET /api/stats` — Global statistics
 - `GET /api/contributors` — Contributor leaderboard
 - `GET /api/repeaters` — List repeater contacts
@@ -92,18 +95,30 @@ Only enable on trusted networks — there is no authentication.
 
 ## Configuration
 
-All settings are in `.env` (not tracked by git — safe to customize without merge conflicts):
+Settings are split between `.env` (port, config-file path, secret token) and
+`config/meshwar.yaml` (everything else, grouped by section).
 
 ```bash
-cp .env.example .env   # First time setup
+cp .env.example .env                                # port + secret token
+cp config/meshwar.example.yaml config/meshwar.yaml   # behavioral settings
 ```
 
-- `PORT` (default: 3000) — Server port
-- `ALLOW_UPLOAD` (default: false) — Enable app uploads
-- `DB_PATH` (default: /app/data/meshwar.db) — Database path
-- `MAP_CENTER_LAT` / `MAP_CENTER_LON` — Default map center
-- `MAP_ZOOM` — Default zoom level
-- Map tile cache (`TILE_*`) — backend tile proxy, disk cache, optional SOCKS5 upstream; see `.env.example`
+**`.env`** (gitignored) — kept minimal:
+- `PORT` (default: 3000) — server port (also docker-compose host port mapping)
+- `CONFIG_PATH` (default: `config/meshwar.yaml`) — path to the YAML config
+- `UPLOAD_TOKEN` — secret auth token for write endpoints (`openssl rand -hex 32`); empty = writes open
+
+**`config/meshwar.yaml`** (gitignored; `config/meshwar.example.yaml` is the tracked,
+fully-commented template). Every key has a default, so omitting the file — or any
+single key — keeps the default and the app still boots. Sections:
+- `server.allow_upload` — enable wardrive app direct uploads
+- `map.center_lat` / `center_lon` / `zoom` — default map view
+- `storage.db_path` — SQLite path (default `data/meshwar.db` → `/app/data/meshwar.db` in Docker)
+- `tiles.*` — backend tile proxy: disk cache, TTL, size cap, prune interval, optional SOCKS5 upstream
+- `gps_filter.*` — GPS outlier filter (speed, session splitting, bbox geofence, debug/dump)
+- `forwarders` — fan filtered uploads out to other maps (`[{ name, url }]`)
+
+See [`config/meshwar.example.yaml`](config/meshwar.example.yaml) for the full schema.
 
 ## Reverse Proxy
 

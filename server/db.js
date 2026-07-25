@@ -1,9 +1,10 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const config = require('./config');
 const geohash = require('./geohash');
 const gpsFilter = require('./gpsfilter');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'meshwar.db');
+const DB_PATH = config.storage.db_path || path.join(__dirname, '..', 'data', 'meshwar.db');
 
 let db;
 
@@ -151,14 +152,37 @@ function getCoverage(contributorFilter = null) {
 /**
  * Insert samples from an upload or import.
  * Deduplicates by sample_id. Drops GPS outliers via the pre-pass filter.
+ *
+ * Options (second arg) — or, for back-compat, the legacy positional call
+ * insertSamples(samples, contributor, region) still works:
+ *   - prefiltered: already-filtered sample array; skips the GPS filter pass
+ *                  (use this when the caller filtered & wants the clean set
+ *                  back, e.g. the HTTP upload path that forwards it).
+ *   - contributor / region: same as the positional args.
  * Returns { inserted, skipped, rejected }
  */
-function insertSamples(samples, contributor = null, region = null) {
+function insertSamples(samples, opts) {
+  // Back-compat: legacy positional call insertSamples(samples, contributor, region).
+  let contributor, region, prefiltered;
+  if (opts && typeof opts === 'object' && !Array.isArray(opts)) {
+    ({ contributor = null, region = null, prefiltered } = opts);
+  } else {
+    contributor = opts ?? null;
+    region = arguments[2] ?? null;
+  }
+
   const d = getDb();
   const importDate = new Date().toISOString();
 
   // Pre-pass: drop GPS outliers (implausible-speed excursions + optional bbox).
-  const { samples: clean, rejected } = gpsFilter.filterSamples(samples);
+  // Skipped when the caller passes an already-filtered set (prefiltered).
+  let clean, rejected;
+  if (prefiltered) {
+    clean = prefiltered;
+    rejected = 0;
+  } else {
+    ({ samples: clean, rejected } = gpsFilter.filterSamples(samples));
+  }
 
   const insert = d.prepare(`
     INSERT OR IGNORE INTO samples
