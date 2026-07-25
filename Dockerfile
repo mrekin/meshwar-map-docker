@@ -26,6 +26,8 @@ COPY server/ ./server/
 COPY public/ ./public/
 # Tools baked to a non-shadowed path; entrypoint seeds them into /app/tools.
 COPY tools/ /app/tools-image/
+# Config template; the app seeds it into /app/config at startup if missing.
+COPY config_examples/ /app/config_examples/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

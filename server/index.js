@@ -19,6 +19,10 @@ const ALLOW_UPLOAD = config.server.allow_upload === true;  // config/meshwar.yam
 // a SECRET, so it stays in .env (never in the YAML).
 const UPLOAD_TOKEN = process.env.UPLOAD_TOKEN || '';
 
+// Seed the config template (config_examples/meshwar.example.yaml) into the config
+// dir as meshwar.example.yaml if it's missing there. Best-effort, never throws.
+config.seedExample();
+
 function timingSafeEqualStr(a, b) {
   const bufA = Buffer.from(String(a));
   const bufB = Buffer.from(String(b));

@@ -4,7 +4,8 @@
 // ./config/ on the host, /app/config/ in the Docker container). It is parsed
 // with js-yaml and deep-merged over the built-in DEFAULTS below, so any omitted
 // key falls back to its default: the app runs unchanged with NO config file at
-// all. See config/meshwar.example.yaml for the full, commented schema.
+// all. The full, commented schema is config_examples/meshwar.example.yaml; the
+// app seeds a copy of it into the config dir at startup (seedExample below).
 //
 // Only three things stay in .env:
 //   - PORT           — docker-compose needs it for host port mapping BEFORE the
@@ -30,6 +31,11 @@ try {
 }
 
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, '..', 'config', 'meshwar.yaml');
+
+// The tracked template, seeded into the config dir as meshwar.example.yaml when
+// missing (see seedExample). Lives next to the repo, not under the mounted
+// config/ dir, so the Docker bind-mount never shadows it.
+const EXAMPLE_SRC = path.join(__dirname, '..', 'config_examples', 'meshwar.example.yaml');
 
 // Safe defaults for every key. Mirrors the previous `process.env.X || default`
 // fallbacks one-to-one. storage.db_path is intentionally '' — when empty, each
@@ -104,7 +110,30 @@ function loadConfig() {
 
 const config = loadConfig();
 
+/**
+ * Seed the template (config_examples/meshwar.example.yaml) into the config dir
+ * as meshwar.example.yaml when it's missing there, so operators always find the
+ * documented template next to their meshwar.yaml (e.g. in the mounted ./config).
+ * Never overwrites an existing copy; never throws — it's a best-effort convenience.
+ */
+function seedExample() {
+  const dir = path.dirname(CONFIG_PATH);
+  const target = path.join(dir, 'meshwar.example.yaml');
+  try {
+    fs.accessSync(target);
+    return; // already present
+  } catch { /* missing — seed it */ }
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(EXAMPLE_SRC, target);
+    console.log(`[config] seeded meshwar.example.yaml into ${dir}`);
+  } catch (e) {
+    console.error(`[config] could not seed meshwar.example.yaml: ${e.message}`);
+  }
+}
+
 module.exports = config;
 module.exports.configPath = CONFIG_PATH;
 module.exports.DEFAULTS = DEFAULTS;
 module.exports._loadConfig = loadConfig;
+module.exports.seedExample = seedExample;

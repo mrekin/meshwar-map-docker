@@ -15,4 +15,5 @@ nodered/
 data/tiles/
 data/debug/
 config/meshwar.yaml
+config/meshwar.example.yaml
 .zcode/

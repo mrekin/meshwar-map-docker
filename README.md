@@ -9,7 +9,7 @@ Self-hosted version of the MeshCore wardrive coverage map. Runs locally with SQL
 git clone https://github.com/mintylinux/meshwar-map-docker.git
 cd meshwar-map-docker
 cp .env.example .env                                  # port + secret token
-cp config/meshwar.example.yaml config/meshwar.yaml    # behavioral settings (edit as needed)
+cp config_examples/meshwar.example.yaml config/meshwar.yaml    # behavioral settings (edit as needed)
 docker-compose up -d
 ```
 
@@ -99,8 +99,8 @@ Settings are split between `.env` (port, config-file path, secret token) and
 `config/meshwar.yaml` (everything else, grouped by section).
 
 ```bash
-cp .env.example .env                                # port + secret token
-cp config/meshwar.example.yaml config/meshwar.yaml   # behavioral settings
+cp .env.example .env                                  # port + secret token
+cp config_examples/meshwar.example.yaml config/meshwar.yaml   # behavioral settings
 ```
 
 **`.env`** (gitignored) — kept minimal:
@@ -108,9 +108,10 @@ cp config/meshwar.example.yaml config/meshwar.yaml   # behavioral settings
 - `CONFIG_PATH` (default: `config/meshwar.yaml`) — path to the YAML config
 - `UPLOAD_TOKEN` — secret auth token for write endpoints (`openssl rand -hex 32`); empty = writes open
 
-**`config/meshwar.yaml`** (gitignored; `config/meshwar.example.yaml` is the tracked,
-fully-commented template). Every key has a default, so omitting the file — or any
-single key — keeps the default and the app still boots. Sections:
+**`config/meshwar.yaml`** (gitignored; `config_examples/meshwar.example.yaml` is the
+tracked, fully-commented template — the app also seeds a copy into `config/` at
+startup if missing). Every key has a default, so omitting the file — or any single
+key — keeps the default and the app still boots. Sections:
 - `server.allow_upload` — enable wardrive app direct uploads
 - `map.center_lat` / `center_lon` / `zoom` — default map view
 - `storage.db_path` — SQLite path (default `data/meshwar.db` → `/app/data/meshwar.db` in Docker)
@@ -118,7 +119,7 @@ single key — keeps the default and the app still boots. Sections:
 - `gps_filter.*` — GPS outlier filter (speed, session splitting, bbox geofence, debug/dump)
 - `forwarders` — fan filtered uploads out to other maps (`[{ name, url }]`)
 
-See [`config/meshwar.example.yaml`](config/meshwar.example.yaml) for the full schema.
+See [`config_examples/meshwar.example.yaml`](config_examples/meshwar.example.yaml) for the full schema.
 
 ## Reverse Proxy
 

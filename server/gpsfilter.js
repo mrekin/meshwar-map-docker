@@ -31,7 +31,7 @@
 // straddling two batches is analysed per half — safe, but a seam glitch may be
 // missed. Bridging batches needs server-side state (future option).
 //
-// Config: the gps_filter section of config/meshwar.yaml (see config/meshwar.example.yaml).
+// Config: the gps_filter section of config/meshwar.yaml (see config_examples/meshwar.example.yaml).
 // Master switch: gps_filter.enabled. Diagnostics: gps_filter.debug logs per-session
 // stats; gps_filter.dump_batches writes every batch (raw + verdict + per-component
 // diagnostics) to data/debug/samples/.

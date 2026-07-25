@@ -1,21 +1,24 @@
 # ============================================================================
-# MeshCore Wardrive Map — configuration
+# MeshCore Wardrive Map — configuration template
 # ============================================================================
-# Copy this file to meshwar.yaml and customize:
-#   cp config/meshwar.example.yaml config/meshwar.yaml
+# Template for the live config (config/meshwar.yaml). Copy it and customize:
+#   cp config_examples/meshwar.example.yaml config/meshwar.yaml
+# (The app also seeds a copy into the config dir as meshwar.example.yaml at
+#  startup if it's missing, so you can copy from there too.)
 #
 # This file holds every BEHAVIORAL setting, grouped by section. Only three
 # things stay in .env (see .env.example):
 #   PORT          — server port (docker-compose needs it for host port mapping)
-#   CONFIG_PATH   — path to this file (optional; default config/meshwar.yaml)
+#   CONFIG_PATH   — path to the live meshwar.yaml (optional; default config/meshwar.yaml)
 #   UPLOAD_TOKEN  — secret auth token for write endpoints
 #
 # EVERY key below has a safe default. If a key (or this whole file) is missing
 # or empty, the default shown is used. Comment a line out or delete it to keep
 # the default. A malformed file is logged and ignored — the app always boots.
 #
-# In Docker this file lives at /app/config/meshwar.yaml (the ./config host dir
-# is mounted as a volume). host: ./config/   container: /app/config/
+# Locations:
+#   this template:  config_examples/meshwar.example.yaml  (host)  /  /app/config_examples/ (container)
+#   live config:    config/meshwar.yaml                   (host)  /  /app/config/         (container, mounted)
 # ============================================================================
 
 
