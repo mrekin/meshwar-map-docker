@@ -55,9 +55,26 @@ function initSchema() {
       longitude REAL NOT NULL,
       elevation REAL,
       added_at TEXT NOT NULL,
-      added_by TEXT
+      added_by TEXT,
+      source_date TEXT
     )
   `);
+
+  // Migration: add source_date to pre-existing repeaters tables.
+  const repeaterCols = d.prepare('PRAGMA table_info(repeaters)').all();
+  if (!repeaterCols.some(c => c.name === 'source_date')) {
+    d.exec('ALTER TABLE repeaters ADD COLUMN source_date TEXT');
+  }
+}
+
+/**
+ * Parse an ISO/date string to epoch ms, or null if missing/invalid.
+ * Used for the repeater staleness comparison (source file date vs stored date).
+ */
+function parseDateMs(v) {
+  if (!v) return null;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : null;
 }
 
 /**
@@ -368,48 +385,73 @@ function getRepeaters() {
 /**
  * Add or update a repeater contact.
  * Uses node_id as unique key — updates if exists.
+ * sourceDate = the date of the source data (GPX export <time>), used by
+ * importRepeaters for the staleness guard. On conflict it is only overwritten
+ * when a fresher one is supplied; COALESCE keeps the existing value otherwise.
  */
-function upsertRepeater(nodeId, lat, lon, name = null, elevation = null, addedBy = null) {
+function upsertRepeater(nodeId, lat, lon, name = null, elevation = null, addedBy = null, sourceDate = null) {
   const d = getDb();
   return d.prepare(`
-    INSERT INTO repeaters (node_id, name, latitude, longitude, elevation, added_at, added_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO repeaters (node_id, name, latitude, longitude, elevation, added_at, added_by, source_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(node_id) DO UPDATE SET
       name = COALESCE(excluded.name, repeaters.name),
       latitude = excluded.latitude,
       longitude = excluded.longitude,
       elevation = COALESCE(excluded.elevation, repeaters.elevation),
-      added_by = COALESCE(excluded.added_by, repeaters.added_by)
-  `).run(nodeId, name, lat, lon, elevation, new Date().toISOString(), addedBy);
+      added_by = COALESCE(excluded.added_by, repeaters.added_by),
+      source_date = COALESCE(excluded.source_date, repeaters.source_date)
+  `).run(nodeId, name, lat, lon, elevation, new Date().toISOString(), addedBy, sourceDate);
 }
 
 /**
  * Import multiple repeater contacts.
- * Returns { inserted, updated }
+ *
+ * sourceDate = the date of the source data (typically the GPX export <time>),
+ * shared by the whole batch. When supplied, an EXISTING record is only updated
+ * if the incoming data is not older than what we already store — i.e. we never
+ * regress to a stale snapshot. New repeaters (no existing row) are always
+ * inserted regardless of sourceDate, so a slightly-older export that carries
+ * extra repeaters still adds them. Legacy rows without source_date fall back to
+ * added_at for the comparison.
+ *
+ * Returns { inserted, updated, skippedStale }
  */
-function importRepeaters(repeaters, addedBy = null) {
+function importRepeaters(repeaters, addedBy = null, sourceDate = null) {
   const d = getDb();
-  let inserted = 0, updated = 0;
-  
+  let inserted = 0, updated = 0, skippedStale = 0;
+
+  const incomingMs = parseDateMs(sourceDate);
+
   transaction(d, () => {
     for (const r of repeaters) {
       const nodeId = r.node_id || r.nodeId || r.id;
       const lat = r.latitude || r.lat;
       const lon = r.longitude || r.lon;
-      
+
       if (!nodeId || !lat || !lon) continue;
       if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
       // Skip 0,0 positions (unknown location)
       if (lat === 0 && lon === 0) continue;
-      
-      const existing = d.prepare('SELECT id FROM repeaters WHERE node_id = ?').get(nodeId);
-      upsertRepeater(nodeId, lat, lon, r.name || null, r.elevation || null, addedBy);
-      
+
+      const existing = d.prepare('SELECT id, source_date, added_at FROM repeaters WHERE node_id = ?').get(nodeId);
+
+      // Staleness guard — only for existing records, never blocks a new repeater.
+      if (existing && incomingMs != null) {
+        const existingMs = parseDateMs(existing.source_date) ?? parseDateMs(existing.added_at);
+        if (existingMs != null && incomingMs < existingMs) {
+          skippedStale++;
+          continue;
+        }
+      }
+
+      upsertRepeater(nodeId, lat, lon, r.name || null, r.elevation || null, addedBy, sourceDate);
+
       if (existing) updated++;
       else inserted++;
     }
   });
-  return { inserted, updated };
+  return { inserted, updated, skippedStale };
 }
 
 /**

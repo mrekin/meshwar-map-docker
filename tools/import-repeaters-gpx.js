@@ -70,6 +70,11 @@ function parseGpx(xmlText) {
   const typeRe = /Type:\s*([A-Za-z0-9_-]+)/;
   const keyRe = /Public Key:\s*([0-9a-fA-F]{64})/;
 
+  // Single export date for the whole file (meshcore-open writes it in
+  // <metadata><time>). Used as the per-batch source date for the staleness guard.
+  const metaTimeRe = /<metadata>[\s\S]*?<time>([^<]+)<\/time>/i;
+  const fileDate = ((metaTimeRe.exec(xmlText) || [])[1] || '').trim() || null;
+
   let m;
   while ((m = blockRe.exec(xmlText)) !== null) {
     const full = m[0];   // whole <wpt ...> ... </wpt> (for lat/lon on opening tag)
@@ -99,15 +104,16 @@ function parseGpx(xmlText) {
     stats.repeaters++;
   }
 
-  return { repeaters, stats };
+  return { repeaters, stats, fileDate };
 }
 
 try {
   const xml = fs.readFileSync(inputFile, 'utf8');
-  const { repeaters, stats } = parseGpx(xml);
+  const { repeaters, stats, fileDate } = parseGpx(xml);
 
   console.log(`GPX: ${path.basename(inputFile)} — ${stats.waypoints} waypoints ` +
     `(${stats.repeaters} repeaters, ${stats.rooms} rooms/other, ${stats.noKey} no key, ${stats.malformed} malformed)`);
+  console.log(`  Source date:       ${fileDate || '(none — staleness check disabled)'}`);
 
   if (repeaters.length === 0) {
     console.error('No importable Type:Repeater waypoints with a public key found.');
@@ -115,13 +121,16 @@ try {
     process.exit(1);
   }
 
-  const result = db.importRepeaters(repeaters, addedBy);
-  const skipped = repeaters.length - result.inserted - result.updated;
+  const result = db.importRepeaters(repeaters, addedBy, fileDate);
+  const skipped = repeaters.length - result.inserted - result.updated - result.skippedStale;
 
   console.log(`Import complete:`);
   console.log(`  Inserted:          ${result.inserted}`);
   console.log(`  Updated:           ${result.updated}`);
   console.log(`  Skipped (0,0/oob): ${skipped}`);
+  if (result.skippedStale > 0) {
+    console.log(`  Skipped (stale):   ${result.skippedStale} (older than existing data)`);
+  }
   console.log(`  Total in DB:       ${db.getRepeaters().length} repeaters`);
   console.log(`  Added by:          ${addedBy}`);
 
