@@ -1,25 +1,12 @@
-# ---- Builder: compile native modules (better-sqlite3) ----
-FROM node:22-slim AS builder
-
-# python3/make/g++ are required by node-gyp for --build-from-source.
-# They stay here and do NOT reach the final image.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+# node:sqlite ships SQLite compiled into Node, so there are no native addons to
+# build: no builder stage, no python3/make/g++, no node-gyp. Pure-JS deps only.
+FROM node:24-slim
 
 WORKDIR /app
 
-# Install server dependencies (ignore host lock file, build native modules fresh)
+# Install server dependencies. Cached unless package.json changes.
 COPY server/package.json ./server/
-RUN cd server && npm install --omit=dev --build-from-source
-
-# ---- Runtime: lean image, no build toolchain ----
-FROM node:22-slim
-
-WORKDIR /app
-
-# Native modules compiled above (same base image => ABI-compatible)
-COPY --from=builder /app/server/node_modules ./server/node_modules
+RUN cd server && npm install --omit=dev
 
 # Copy application
 COPY server/ ./server/
@@ -37,4 +24,6 @@ RUN mkdir -p /app/data/processed
 EXPOSE 3000
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["node", "server/index.js"]
+# node:sqlite is experimental on Node 24 (no flag needed); silence the one-time
+# ExperimentalWarning so it doesn't pollute logs.
+CMD ["node", "--disable-warning=ExperimentalWarning", "server/index.js"]

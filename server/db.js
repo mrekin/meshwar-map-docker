@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const config = require('./config');
 const geohash = require('./geohash');
@@ -10,9 +10,9 @@ let db;
 
 function getDb() {
   if (!db) {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
+    db = new DatabaseSync(DB_PATH);
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
     initSchema();
   }
   return db;
@@ -58,6 +58,23 @@ function initSchema() {
       added_by TEXT
     )
   `);
+}
+
+/**
+ * Run `fn` inside a BEGIN/COMMIT transaction. node:sqlite (DatabaseSync) has no
+ * `.transaction()` helper like better-sqlite3, so this wraps manual
+ * BEGIN/COMMIT/ROLLBACK. The DB connection is single-threaded, so there is no
+ * concurrency concern with manual transaction control.
+ */
+function transaction(d, fn) {
+  d.exec('BEGIN');
+  try {
+    fn();
+    d.exec('COMMIT');
+  } catch (err) {
+    d.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
@@ -195,8 +212,8 @@ function insertSamples(samples, opts) {
   let inserted = 0;
   let skipped = 0;
 
-  const tx = d.transaction((samples) => {
-    for (const s of samples) {
+  transaction(d, () => {
+    for (const s of clean) {
       const lat = s.latitude || s.lat;
       const lon = s.longitude || s.lon;
       
@@ -231,8 +248,6 @@ function insertSamples(samples, opts) {
       else skipped++;
     }
   });
-  
-  tx(clean);
   return { inserted, skipped, rejected };
 }
 
@@ -376,8 +391,8 @@ function importRepeaters(repeaters, addedBy = null) {
   const d = getDb();
   let inserted = 0, updated = 0;
   
-  const tx = d.transaction((list) => {
-    for (const r of list) {
+  transaction(d, () => {
+    for (const r of repeaters) {
       const nodeId = r.node_id || r.nodeId || r.id;
       const lat = r.latitude || r.lat;
       const lon = r.longitude || r.lon;
@@ -394,8 +409,6 @@ function importRepeaters(repeaters, addedBy = null) {
       else inserted++;
     }
   });
-  
-  tx(repeaters);
   return { inserted, updated };
 }
 
