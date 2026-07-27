@@ -4,25 +4,32 @@
 // ---------------------
 // Theme management
 // ---------------------
-let isDarkTheme = true;
+// mapTheme drives the basemap tiles: 'dark' (Dark Matter), 'voyager' (Voyager —
+// a soft light style, easier on the eyes than pure-white Positron), 'light' (Positron).
+// isDarkChrome drives the UI chrome + overlay colors: only 'dark' uses dark panels;
+// 'voyager' and 'light' reuse the light-theme styling (their tiles are light).
+let mapTheme = 'dark';
+let isDarkChrome = true;
 let tileLayer = null;
 // Route map tiles through the backend proxy (on-disk cache + CARTO→OSM failover)
 // or straight from the CDN. Set from /api/config (tileCache.enabled); defaults to
 // the proxy until the config arrives.
 let tileProxyEnabled = true;
 
-const savedTheme = localStorage.getItem('mapTheme') || 'dark';
-if (savedTheme === 'light') {
-    isDarkTheme = false;
+mapTheme = localStorage.getItem('mapTheme') || 'voyager';
+isDarkChrome = mapTheme === 'dark';
+if (!isDarkChrome) {
     document.body.classList.add('light-theme');
 }
+syncThemeSelect();
 
-function toggleTheme() {
-    isDarkTheme = !isDarkTheme;
-    document.body.classList.toggle('light-theme');
-    updateThemeIcon();
+function setTheme(theme) {
+    mapTheme = theme;
+    isDarkChrome = mapTheme === 'dark';
+    document.body.classList.toggle('light-theme', !isDarkChrome);
+    syncThemeSelect();
     updateMapTiles();
-    localStorage.setItem('mapTheme', isDarkTheme ? 'dark' : 'light');
+    localStorage.setItem('mapTheme', mapTheme);
 
     // Re-render lines so they pick up theme-aware colors.
     if (showEdges && cachedCoverage) {
@@ -33,6 +40,11 @@ function toggleTheme() {
     }
 }
 
+function syncThemeSelect() {
+    const sel = document.getElementById('theme-select');
+    if (sel) sel.value = mapTheme;
+}
+
 function toggleInfoPanel() {
     document.getElementById('info-panel').classList.toggle('hidden');
 }
@@ -41,9 +53,7 @@ function toggleToolsPanel() {
     document.getElementById('measure-control').classList.toggle('hidden');
 }
 
-function updateThemeIcon() {
-    document.getElementById('theme-icon').textContent = isDarkTheme ? '☀️' : '🌙';
-}
+const CARTO_LAYER = { dark: 'dark_all', voyager: 'rastertiles/voyager', light: 'light_all' };
 
 function tileSource(theme) {
     // Backend proxy enabled: route through /tiles (disk cache + CARTO→OSM failover).
@@ -51,14 +61,13 @@ function tileSource(theme) {
     if (tileProxyEnabled) {
         return { url: `/tiles/${theme}/{z}/{x}/{y}.png`, subdomains: 'abc' };
     }
-    const layer = theme === 'dark' ? 'dark_all' : 'light_all';
-    return { url: `https://{s}.basemaps.cartocdn.com/${layer}/{z}/{x}/{y}.png`, subdomains: 'abcd' };
+    return { url: `https://{s}.basemaps.cartocdn.com/${CARTO_LAYER[theme]}/{z}/{x}/{y}.png`, subdomains: 'abcd' };
 }
 
 function updateMapTiles() {
     if (tileLayer) map.removeLayer(tileLayer);
 
-    const { url, subdomains } = tileSource(isDarkTheme ? 'dark' : 'light');
+    const { url, subdomains } = tileSource(mapTheme);
     tileLayer = L.tileLayer(url, {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
         subdomains,
@@ -69,16 +78,16 @@ function updateMapTiles() {
 }
 
 // Theme-aware styles for repeater edge/selection lines.
-// Dark theme uses bright tones (visible on dark map tiles);
-// light theme uses darker, higher-contrast tones (visible on light OSM tiles).
+// Dark chrome uses bright tones (visible on dark map tiles);
+// light chrome (voyager/light) uses darker, higher-contrast tones (visible on light tiles).
 function edgeLineStyle() {
-    return isDarkTheme
+    return isDarkChrome
         ? { color: '#bb86fc', weight: 1.5, opacity: 0.4, dashArray: '4, 6' }
         : { color: '#6a1b9a', weight: 1.8, opacity: 0.6, dashArray: '4, 6' };
 }
 
 function selectionLineStyle() {
-    return isDarkTheme
+    return isDarkChrome
         ? { color: '#ffd166', weight: 2, opacity: 0.85, dashArray: '6, 6' }
         : { color: '#e65100', weight: 2.5, opacity: 0.9, dashArray: '6, 6' };
 }
@@ -137,7 +146,6 @@ map.on('click', () => {
 });
 
 updateMapTiles();
-updateThemeIcon();
 
 // ---------------------
 // Layer groups

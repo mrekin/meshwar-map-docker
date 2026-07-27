@@ -76,7 +76,7 @@ function solidPng(r, g, b) {
   const idat = zlib.deflateSync(Buffer.from([0, r, g, b])); // filter 0 + 1 pixel
   return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', idat), pngChunk('IEND', Buffer.alloc(0))]);
 }
-const BLANK = { dark: solidPng(20, 20, 20), light: solidPng(225, 225, 225) };
+const BLANK = { dark: solidPng(20, 20, 20), voyager: solidPng(238, 233, 223), light: solidPng(225, 225, 225) };
 
 // ---- runtime state ----
 const inflight = new Map();  // key -> Promise  (dedup parallel fetches)
@@ -87,7 +87,9 @@ let pruneAt = 0, pruning = false;
 // ---- upstream failover ----
 const CARTO_SUBS = ['a', 'b', 'c', 'd'];
 function upstreams(theme, z, x, y) {
-  const t = theme === 'dark' ? 'dark_all' : 'light_all';
+  const t = theme === 'dark' ? 'dark_all'
+          : theme === 'voyager' ? 'rastertiles/voyager'
+          : 'light_all';
   const s1 = CARTO_SUBS[(x + y) % 4];
   const s2 = CARTO_SUBS[(x + y + 2) % 4];
   return [
@@ -188,7 +190,7 @@ if (CACHE_ENABLED) maybePrune(); // reconcile totalBytes on boot
 // ---- route ----
 router.get('/:theme/:z/:x/:y.png', async (req, res) => {
   const { theme, z, x, y } = req.params;
-  if (theme !== 'dark' && theme !== 'light') return res.status(404).end();
+  if (!['dark', 'voyager', 'light'].includes(theme)) return res.status(404).end();
   const zi = +z, xi = +x, yi = +y;
   if (!Number.isInteger(zi) || zi < 0 || zi > 19 || xi < 0 || yi < 0) return res.status(404).end();
   res.set('Cache-Control', 'public, max-age=31536000, immutable');

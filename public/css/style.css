@@ -167,26 +167,32 @@ body {
     width: 80px;
 }
 
-/* Theme toggle button */
-.theme-toggle {
+/* Map style selector (dark / voyager / light) — matches the menu/tools buttons. */
+.theme-select {
     position: absolute;
     top: 10px;
-    right: 60px;
+    right: 68px;            /* clears the 48px tools-button (right:10..58) + 10px gap */
+    height: 48px;           /* same height as the 24px buttons (font 24 + padding 12×2) */
+    padding: 0 12px;
     background: rgba(30, 30, 30, 0.95);
-    padding: 10px;
+    color: #fff;
+    border: none;
     border-radius: 8px;
-    z-index: 1000;
+    z-index: 1001;          /* same layer as the buttons — won't tuck under them */
     cursor: pointer;
+    font-size: 15px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.5);
     transition: background 0.3s;
 }
 
-.theme-toggle:hover {
+.theme-select:hover {
     background: rgba(50, 50, 50, 0.95);
 }
 
-.theme-toggle-icon {
-    font-size: 24px;
+/* Solid option background so the dropdown stays readable in both themes. */
+.theme-select option {
+    background: #1e1e1e;
+    color: #fff;
 }
 
 /* Clickable repeater links */
@@ -631,13 +637,18 @@ body.light-theme .layer-toggles {
     border-top-color: #ddd;
 }
 
-body.light-theme .theme-toggle {
+body.light-theme .theme-select {
     background: rgba(255, 255, 255, 0.95);
     color: #000;
 }
 
-body.light-theme .theme-toggle:hover {
+body.light-theme .theme-select:hover {
     background: rgba(240, 240, 240, 0.95);
+}
+
+body.light-theme .theme-select option {
+    background: #fff;
+    color: #000;
 }
 
 body.light-theme .leaflet-popup-content-wrapper {
@@ -813,7 +824,7 @@ body.light-theme .timelapse-btn:hover {
         right: 10px;
     }
 
-    .theme-toggle {
+    .theme-select {
         display: block;
         top: 60px;
         right: 10px;

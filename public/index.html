@@ -24,9 +24,12 @@
         🛠️
     </div>
 
-    <div class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
-        <span class="theme-toggle-icon" id="theme-icon">☀️</span>
-    </div>
+    <select id="theme-select" class="theme-select" title="Map style"
+            onchange="setTheme(this.value)">
+        <option value="dark">🌙 Dark</option>
+        <option value="voyager" selected>🗺️ Voyager</option>
+        <option value="light">☀️ Light</option>
+    </select>
 
     <!-- Bottom-left detail panel: shows selected cell / repeater info -->
     <div class="detail-panel hidden" id="detail-panel">
