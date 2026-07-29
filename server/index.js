@@ -189,6 +189,7 @@ app.post('/api/repeaters', requireToken, (req, res) => {
       inserted: result.inserted,
       updated: result.updated,
       stale: result.skippedStale,
+      unchanged: result.unchanged,
       total: db.getRepeaters().length,
     });
   } catch (err) {

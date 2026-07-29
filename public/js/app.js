@@ -1243,6 +1243,15 @@ function loadContributors() {
 // ---------------------
 // Repeater GPX import (Tools panel)
 // ---------------------
+function onLoadRepeatersClick() {
+    // Fire a real submit event so the browser's password manager captures the
+    // name/token pair and offers to save them. requestSubmit() dispatches the
+    // submit event (form.submit() does NOT), which is what password managers
+    // watch for; onsubmit calls preventDefault(), so nothing navigates.
+    const form = document.getElementById('upload-token-form');
+    if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
+    document.getElementById('gpx-file-input').click();
+}
 function onGpxFileSelected(input) {
     const file = input.files && input.files[0];
     if (!file) return;
@@ -1291,9 +1300,15 @@ function onGpxFileSelected(input) {
                 // practice, but this neutralizes any unexpected string in the JSON.
                 const ins = Number(j.inserted) || 0;
                 const upd = Number(j.updated) || 0;
+                const unc = Number(j.unchanged) || 0;
+                const stale = Number(j.stale) || 0;
                 const tot = Number(j.total) || 0;
+                let summary = `<b>Inserted:</b> ${ins} &nbsp; <b>Updated:</b> ${upd}`;
+                if (unc > 0) summary += ` &nbsp; <b>Unchanged:</b> ${unc}`;
+                if (stale > 0) summary += ` &nbsp; <b>Skipped (older):</b> ${stale}`;
+                summary += ` &nbsp; <b>Total:</b> ${tot}`;
                 out.innerHTML =
-                    `<b>Inserted:</b> ${ins} &nbsp; <b>Updated:</b> ${upd} &nbsp; <b>Total:</b> ${tot}<br>` +
+                    summary + `<br>` +
                     `<span class="muted">Parsed: ${stats.repeaters} repeaters of ${stats.waypoints} waypoints ` +
                     `(${stats.rooms} rooms/other, ${stats.noKey} no key, ${stats.malformed} malformed)</span>`;
                 loadRepeaterContacts(); // refresh markers + Repeater Edge Filter list

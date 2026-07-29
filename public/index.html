@@ -55,12 +55,13 @@
 
         <div class="tools-divider"></div>
         <div class="tool-section-title">Repeater Import (GPX)</div>
-        <form id="upload-token-form" style="margin:0" autocomplete="on" onsubmit="event.preventDefault(); document.getElementById('gpx-file-input').click();">
+        <form id="upload-token-form" style="margin:0" autocomplete="on" onsubmit="event.preventDefault();">
             <input type="text" id="upload-username" class="token-input" name="username" placeholder="Your name / callsign" autocomplete="username">
             <input type="password" id="upload-token" class="token-input" name="password" placeholder="Upload token" autocomplete="current-password">
-            <input type="file" id="gpx-file-input" accept=".gpx,application/gpx+xml,application/xml,text/xml" onchange="onGpxFileSelected(this)" style="display:none">
-            <button type="submit" class="measure-btn">📡 Load Repeaters (GPX)</button>
+            <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
         </form>
+        <input type="file" id="gpx-file-input" accept=".gpx,application/gpx+xml,application/xml,text/xml" onchange="onGpxFileSelected(this)" style="display:none">
+        <button class="measure-btn" onclick="onLoadRepeatersClick()">📡 Load Repeaters (GPX)</button>
         <div class="gpx-result" id="gpx-result"></div>
     </div>
 

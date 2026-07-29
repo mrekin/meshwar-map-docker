@@ -415,11 +415,15 @@ function upsertRepeater(nodeId, lat, lon, name = null, elevation = null, addedBy
  * extra repeaters still adds them. Legacy rows without source_date fall back to
  * added_at for the comparison.
  *
- * Returns { inserted, updated, skippedStale }
+ * Existing rows are also skipped (counted as `unchanged`) when the incoming
+ * content would not actually change them — same coords/name/elevation — so
+ * re-importing the same export is a no-op rather than N spurious "updates".
+ *
+ * Returns { inserted, updated, skippedStale, unchanged }
  */
 function importRepeaters(repeaters, addedBy = null, sourceDate = null) {
   const d = getDb();
-  let inserted = 0, updated = 0, skippedStale = 0;
+  let inserted = 0, updated = 0, skippedStale = 0, unchanged = 0;
 
   const incomingMs = parseDateMs(sourceDate);
 
@@ -434,7 +438,7 @@ function importRepeaters(repeaters, addedBy = null, sourceDate = null) {
       // Skip 0,0 positions (unknown location)
       if (lat === 0 && lon === 0) continue;
 
-      const existing = d.prepare('SELECT id, source_date, added_at FROM repeaters WHERE node_id = ?').get(nodeId);
+      const existing = d.prepare('SELECT id, name, latitude, longitude, elevation, source_date, added_at FROM repeaters WHERE node_id = ?').get(nodeId);
 
       // Staleness guard — only for existing records, never blocks a new repeater.
       if (existing && incomingMs != null) {
@@ -445,13 +449,30 @@ function importRepeaters(repeaters, addedBy = null, sourceDate = null) {
         }
       }
 
+      // Content guard — leave an existing row untouched when nothing meaningful
+      // would change, so re-importing the same export is a no-op (0 updated).
+      // Mirrors upsertRepeater's UPDATE: lat/lon are always overwritten,
+      // name/elevation only when a non-null value arrives (COALESCE).
+      // added_at/added_by are housekeeping and intentionally excluded.
+      if (existing) {
+        const incomingName = r.name || null;
+        const incomingElev = r.elevation || null;
+        const nameSame = incomingName === null || incomingName === existing.name;
+        const elevSame = incomingElev === null || Number(incomingElev) === Number(existing.elevation);
+        const coordSame = Number(lat) === Number(existing.latitude) && Number(lon) === Number(existing.longitude);
+        if (nameSame && elevSame && coordSame) {
+          unchanged++;
+          continue;
+        }
+      }
+
       upsertRepeater(nodeId, lat, lon, r.name || null, r.elevation || null, addedBy, sourceDate);
 
       if (existing) updated++;
       else inserted++;
     }
   });
-  return { inserted, updated, skippedStale };
+  return { inserted, updated, skippedStale, unchanged };
 }
 
 /**
