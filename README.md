@@ -2,6 +2,19 @@
 
 Self-hosted version of the MeshCore wardrive coverage map. Runs locally with SQLite — no cloud dependencies.
 
+## Differences from upstream
+
+This is a fork of [`mintylinux/meshwar-map-docker`](https://github.com/mintylinux/meshwar-map-docker). Upstream ships a single `meshwar-map` service with a flat `.env` (`PORT`, `ALLOW_UPLOAD`, `DB_PATH`, `MAP_CENTER_*`) and JSON-only imports. On top of that, this fork adds:
+
+- **Repeater contacts (GPX)** — browser upload (`public/js/gpx.js`) and CLI import (`tools/import-repeaters-gpx.js`) from meshcore-open GPX exports, with idempotent upsert, staleness guard, and discovery tracking. New endpoints: `GET` / `POST` / `DELETE /api/repeaters`.
+- **Tile proxy & cache** (`server/tiles.js`) — on-disk tile cache with stale-while-revalidate / stale-on-error, configurable TTL, size cap, and prune interval; optional SOCKS5 upstream proxy and referer-based hotlink protection.
+- **GPS outlier filter** (`server/gpsfilter.js`) — drops teleport jumps, splits multi-drive sessions by time gap, keeps the largest connected component, with optional bbox geofence and debug batch dumps.
+- **Sample forwarders** (`server/forwarders.js`) — fan cleaned uploads out to other map instances in the background (fire-and-forget).
+- **Configuration (YAML)** (`server/config.js`, `config/meshwar.yaml`, `config_examples/`) — behavioral settings moved to YAML with deep-merged defaults and auto-seed; `.env` reduced to `PORT`, `CONFIG_PATH`, `UPLOAD_TOKEN`.
+- **Token auth** — `UPLOAD_TOKEN` guards write endpoints (timing-safe comparison), replacing upstream's boolean `ALLOW_UPLOAD`.
+- **UI** — new map styles (Dark Matter / Voyager / Light Positron), a lite theme, and custom icons; plus "Hide 0% cells", repeater-edge filter, contributor filter, and auto coverage resolution.
+- **Ops** — Node 24 + `node-sqlite`, multi-arch Docker CI (amd64/arm64, `.github/workflows/docker-publish.yml`), and a `.dockerignore`.
+
 ## Quick Start
 
 ### With Docker
@@ -68,12 +81,6 @@ repeaters" and "Show Edges" work on the map:
 docker exec -it meshwar-map node /app/tools/import-repeaters-gpx.js \
   /app/imports/meshcore_repeaters.gpx --added-by mrekin
 ```
-
-#### Automate via Node-RED (test)
-
-Import repeaters automatically from a Telegram bot: send a `.gpx` file to the
-bot and it parses and posts to `POST /api/repeaters`. A ready-to-import flow and
-setup instructions are in [`nodered/`](nodered/README.md).
 
 ### App Upload (Optional)
 

@@ -906,14 +906,12 @@ async function loadData() {
             // Update node count from actual loaded data
             updateNodeCount();
 
-    if (document.getElementById('toggle-repeaters').checked) {
-        showRepeaters = true;
-        updateRepeaterContactMarkers();
-    }
-    if (document.getElementById('toggle-edges').checked) {
-        showEdges = true;
-        updateEdgeLines(aggregateAtPrecision(cachedCoverage, getEffectivePrecision()));
-    }
+            // Apply the initial checkbox state to the map. The toggle handlers
+            // also attach the layer (map.addLayer) — the previous inline init
+            // only populated the layer group, so markers stayed invisible until
+            // the user re-toggled the checkbox.
+            toggleRepeaterLayer();
+            toggleEdgeLayer();
 
             if (timelapseActive) initTimelapse();
             scheduleRender();
