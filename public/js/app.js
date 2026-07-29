@@ -1270,13 +1270,14 @@ function onGpxFileSelected(input) {
         }
 
         const token = (document.getElementById('upload-token').value || '').trim();
+        const username = (document.getElementById('upload-username').value || '').trim();
         const url = '/api/repeaters' + (token ? ('?token=' + encodeURIComponent(token)) : '');
         out.textContent = `Uploading ${repeaters.length} repeaters…`;
 
         fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ repeaters, addedBy: 'web-ui' }),
+            body: JSON.stringify({ repeaters, addedBy: username || 'web-ui' }),
         })
             .then(r => r.json().then(j => ({ ok: r.ok, j })))
             .then(({ ok, j }) => {
