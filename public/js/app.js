@@ -1343,11 +1343,13 @@ function loadRepeaterContacts() {
         // (populateRepeaterFilter runs when coverage loads, but contacts may
         // arrive later — without this the dropdown shows node_ids, not names).
         populateRepeaterFilter();
-        if (showRepeaters) updateRepeaterContactMarkers();
-        if (showEdges && cachedCoverage) {
-            const aggregated = aggregateAtPrecision(cachedCoverage, getEffectivePrecision());
-            updateEdgeLines(aggregated);
-        }
+        // Contacts just arrived — apply the current checkbox state. The toggle
+        // handlers attach the layers to the map (map.addLayer); without this the
+        // repeater layer is populated but never shown on load. Doing it here is
+        // format-independent (works for both legacy and sharded coverage) and
+        // race-free — it runs once repeater data actually exists.
+        toggleRepeaterLayer();
+        toggleEdgeLayer();
     }).catch(() => {});
 }
 
