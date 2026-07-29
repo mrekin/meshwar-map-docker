@@ -167,6 +167,7 @@ let coveragePrecision = 6;      // User-selected display precision
 let showRepeaters = false;
 let showEdges = false;
 let showHeatmap = false;
+let hideNoCoverage = false;   // hide cells with 0% success rate (received === 0)
 let renderPending = false;      // Debounce flag for viewport rendering
 
 // Time-lapse state
@@ -293,6 +294,9 @@ function renderVisibleCoverage() {
 
         // Skip cells with no actual ping data (GPS-only uploads)
         if ((cell.received + cell.lost) === 0) return;
+
+        // Hide cells with 0% success rate (no successful pings received)
+        if (hideNoCoverage && cell.received === 0) return;
 
         const bounds = geohashToBounds(hash);
         const cellBounds = L.latLngBounds(bounds);
@@ -947,6 +951,11 @@ function toggleCoverage() {
     } else {
         map.removeLayer(coverageLayer);
     }
+}
+
+function toggleNoCoverage() {
+    hideNoCoverage = document.getElementById('toggle-no-coverage').checked;
+    renderVisibleCoverage();
 }
 
 // ---------------------

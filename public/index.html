@@ -86,12 +86,16 @@
                 <label for="toggle-coverage">Show Coverage Grid</label>
             </div>
             <div class="toggle-item">
-                <input type="checkbox" id="toggle-heatmap" onchange="toggleHeatmapLayer()">
-                <label for="toggle-heatmap">Show Heatmap</label>
+                <input type="checkbox" id="toggle-repeaters" checked onchange="toggleRepeaterLayer()">
+                <label for="toggle-repeaters">Show Repeaters</label>
             </div>
             <div class="toggle-item">
-                <input type="checkbox" id="toggle-repeaters" onchange="toggleRepeaterLayer()">
-                <label for="toggle-repeaters">Show Repeaters</label>
+                <input type="checkbox" id="toggle-no-coverage" onchange="toggleNoCoverage()">
+                <label for="toggle-no-coverage">Hide 0% Cells</label>
+            </div>
+            <div class="toggle-item">
+                <input type="checkbox" id="toggle-heatmap" onchange="toggleHeatmapLayer()">
+                <label for="toggle-heatmap">Show Heatmap</label>
             </div>
             <div class="toggle-item">
                 <input type="checkbox" id="toggle-edges" onchange="toggleEdgeLayer()">
