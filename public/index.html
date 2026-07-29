@@ -118,11 +118,11 @@
         <div class="layer-toggles">
             <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #aaa;">Time Filter</div>
             <div class="time-filter-buttons">
-                <button class="time-btn active" onclick="setTimeFilter(0)">All</button>
-                <button class="time-btn" onclick="setTimeFilter(1)">24h</button>
-                <button class="time-btn" onclick="setTimeFilter(7)">7d</button>
-                <button class="time-btn" onclick="setTimeFilter(30)">30d</button>
-                <button class="time-btn" onclick="setTimeFilter(90)">90d</button>
+                <button class="time-btn active" data-days="0" onclick="setTimeFilter(0)">All</button>
+                <button class="time-btn" data-days="1" onclick="setTimeFilter(1)">24h</button>
+                <button class="time-btn" data-days="7" onclick="setTimeFilter(7)">7d</button>
+                <button class="time-btn" data-days="30" onclick="setTimeFilter(30)">30d</button>
+                <button class="time-btn" data-days="90" onclick="setTimeFilter(90)">90d</button>
             </div>
         </div>
 

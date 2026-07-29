@@ -45,6 +45,34 @@ function syncThemeSelect() {
     if (sel) sel.value = mapTheme;
 }
 
+// ---------------------
+// Panel settings persistence (left-menu view preferences)
+// ---------------------
+// Saved to localStorage so the user's layer toggles / resolution / time filter
+// survive reloads. The map theme (mapTheme above) keeps its own key.
+const PANEL_SETTINGS_KEY = 'meshwar.panelSettings';
+
+function loadPanelSettings() {
+    try {
+        return JSON.parse(localStorage.getItem(PANEL_SETTINGS_KEY)) || {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function savePanelSettings(obj) {
+    try {
+        localStorage.setItem(PANEL_SETTINGS_KEY, JSON.stringify(obj));
+    } catch (e) { /* storage full / disabled — ignore */ }
+}
+
+const panelSettings = loadPanelSettings();
+
+function persistPanelSetting(key, value) {
+    panelSettings[key] = value;
+    savePanelSettings(panelSettings);
+}
+
 function toggleInfoPanel() {
     document.getElementById('info-panel').classList.toggle('hidden');
 }
@@ -414,6 +442,7 @@ function toggleHeatmapLayer() {
             heatLayer = null;
         }
     }
+    persistPanelSetting('heatmap', showHeatmap);
 }
 
 function updateHeatmap(aggregated) {
@@ -474,6 +503,7 @@ function toggleRepeaterLayer() {
         map.removeLayer(repeaterLayer);
         selectionLayer.clearLayers(); // hide lines when repeaters are off
     }
+    persistPanelSetting('repeaters', showRepeaters);
 }
 
 function toggleEdgeLayer() {
@@ -487,6 +517,7 @@ function toggleEdgeLayer() {
     } else {
         map.removeLayer(edgeLayer);
     }
+    persistPanelSetting('edges', showEdges);
 }
 
 // Build edge lines from repeater contact positions to coverage cells they were heard in
@@ -932,6 +963,7 @@ async function loadData() {
 function changeResolution() {
     coveragePrecision = getEffectivePrecision();
     scheduleRender();
+    persistPanelSetting('resolution', document.getElementById('resolution-selector').value);
 }
 
 // ---------------------
@@ -949,11 +981,13 @@ function toggleCoverage() {
     } else {
         map.removeLayer(coverageLayer);
     }
+    persistPanelSetting('coverage', document.getElementById('toggle-coverage').checked);
 }
 
 function toggleNoCoverage() {
     hideNoCoverage = document.getElementById('toggle-no-coverage').checked;
     renderVisibleCoverage();
+    persistPanelSetting('noCoverage', hideNoCoverage);
 }
 
 // ---------------------
@@ -1178,6 +1212,7 @@ function setTimeFilter(days) {
     document.querySelectorAll('.time-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
     scheduleRender();
+    persistPanelSetting('timeFilter', timeFilterDays);
 }
 
 // ---------------------
@@ -1399,6 +1434,47 @@ function updateRepeaterContactMarkers() {
 // ---------------------
 // Initialize
 // ---------------------
+
+// Restore the user's saved view preferences (layer toggles, resolution, time
+// filter) before the first data load, so the map opens the way they left it.
+function applyPanelSettings() {
+    const setChecked = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = val;
+    };
+
+    // Layer toggles
+    if (typeof panelSettings.coverage === 'boolean') {
+        setChecked('toggle-coverage', panelSettings.coverage);
+        if (!panelSettings.coverage) map.removeLayer(coverageLayer); // shown by default
+    }
+    if (typeof panelSettings.repeaters === 'boolean') setChecked('toggle-repeaters', panelSettings.repeaters);
+    if (typeof panelSettings.noCoverage === 'boolean') {
+        setChecked('toggle-no-coverage', panelSettings.noCoverage);
+        hideNoCoverage = panelSettings.noCoverage;
+    }
+    if (typeof panelSettings.heatmap === 'boolean') {
+        setChecked('toggle-heatmap', panelSettings.heatmap);
+        showHeatmap = panelSettings.heatmap;
+        if (showHeatmap) map.addLayer(heatmapLayer); // updateHeatmap draws on render
+    }
+    if (typeof panelSettings.edges === 'boolean') setChecked('toggle-edges', panelSettings.edges);
+
+    // Coverage resolution (only if it's still a valid option)
+    const resSel = document.getElementById('resolution-selector');
+    if (resSel && panelSettings.resolution != null &&
+        [...resSel.options].some(o => o.value === panelSettings.resolution)) {
+        resSel.value = panelSettings.resolution;
+    }
+
+    // Time filter
+    timeFilterDays = (typeof panelSettings.timeFilter === 'number') ? panelSettings.timeFilter : 0;
+    document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.days, 10) === timeFilterDays);
+    });
+}
+
+applyPanelSettings();
 loadData();
 loadContributors();
 loadRepeaterContacts();
