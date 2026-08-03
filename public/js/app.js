@@ -9,7 +9,16 @@
 // 'osm' (the OpenStreetMap standard style, served straight from the OSM tile servers).
 // isDarkChrome drives the UI chrome + overlay colors: only 'dark' uses dark panels;
 // 'voyager', 'light' and 'osm' reuse the light-theme styling (their tiles are light).
-let mapTheme = 'dark';
+const VALID_THEMES = ['dark', 'voyager', 'light', 'osm'];
+const DEFAULT_THEME = 'voyager';
+
+// Coerce an unknown/missing theme (e.g. a stale or hand-edited localStorage
+// value) back to the default so broken tiles never load.
+function normalizeTheme(theme) {
+    return VALID_THEMES.includes(theme) ? theme : DEFAULT_THEME;
+}
+
+let mapTheme = DEFAULT_THEME;
 let isDarkChrome = true;
 let tileLayer = null;
 // Route map tiles through the backend proxy (on-disk cache + CARTO→OSM failover)
@@ -17,7 +26,7 @@ let tileLayer = null;
 // the proxy until the config arrives.
 let tileProxyEnabled = true;
 
-mapTheme = localStorage.getItem('mapTheme') || 'voyager';
+mapTheme = normalizeTheme(localStorage.getItem('mapTheme'));
 isDarkChrome = mapTheme === 'dark';
 if (!isDarkChrome) {
     document.body.classList.add('light-theme');
@@ -25,7 +34,7 @@ if (!isDarkChrome) {
 syncThemeSelect();
 
 function setTheme(theme) {
-    mapTheme = theme;
+    mapTheme = normalizeTheme(theme);
     isDarkChrome = mapTheme === 'dark';
     document.body.classList.toggle('light-theme', !isDarkChrome);
     syncThemeSelect();
@@ -151,9 +160,23 @@ fetch('/api/config').then(r => r.json()).then(cfg => {
         updateMapTiles();
     }
 }).catch(() => {});
-if (navigator.geolocation) {
+// Browser geolocation: recenter on the user's position on load.
+// Two guards so it never yanks the user away from where they're looking:
+//  1) "Center on my location on load" must be enabled (saved view preference).
+//  2) The user must not have moved/zoomed the map before the (async) position
+//     resolves — if they touched it first, respect their view and skip the jump.
+const useGeolocation = panelSettings.useGeolocation !== false;
+let userInteractedWithMap = false;
+const markUserMapInteraction = () => { userInteractedWithMap = true; };
+['mousedown', 'wheel', 'touchstart', 'keydown'].forEach(evt =>
+    map.getContainer().addEventListener(evt, markUserMapInteraction, { once: true }));
+
+if (useGeolocation && navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
-        (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 12),
+        (pos) => {
+            if (userInteractedWithMap) return; // user moved first — keep their view
+            map.setView([pos.coords.latitude, pos.coords.longitude], 12);
+        },
         () => {}
     );
 }
@@ -1076,6 +1099,13 @@ function toggleNoCoverage() {
     persistPanelSetting('noCoverage', hideNoCoverage);
 }
 
+// Geolocation toggle: only persists the preference — the recenter itself
+// runs once on load (see the getCurrentPosition block near map init).
+function toggleGeolocation() {
+    const enabled = document.getElementById('toggle-geolocation').checked;
+    persistPanelSetting('useGeolocation', enabled);
+}
+
 // ---------------------
 // Measure tool
 // ---------------------
@@ -1538,6 +1568,9 @@ function applyPanelSettings() {
     if (typeof panelSettings.noCoverage === 'boolean') {
         setChecked('toggle-no-coverage', panelSettings.noCoverage);
         hideNoCoverage = panelSettings.noCoverage;
+    }
+    if (typeof panelSettings.useGeolocation === 'boolean') {
+        setChecked('toggle-geolocation', panelSettings.useGeolocation);
     }
     if (typeof panelSettings.heatmap === 'boolean') {
         setChecked('toggle-heatmap', panelSettings.heatmap);

@@ -105,6 +105,13 @@
         </div>
 
         <div class="layer-toggles">
+            <div class="toggle-item">
+                <input type="checkbox" id="toggle-geolocation" checked onchange="toggleGeolocation()">
+                <label for="toggle-geolocation">Center on my location on load</label>
+            </div>
+        </div>
+
+        <div class="layer-toggles">
             <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #aaa;">Coverage Resolution</div>
             <select id="resolution-selector" onchange="changeResolution()" class="resolution-select">
                 <option value="auto" selected>Auto (follow zoom)</option>
