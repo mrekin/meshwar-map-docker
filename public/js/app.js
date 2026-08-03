@@ -5,9 +5,10 @@
 // Theme management
 // ---------------------
 // mapTheme drives the basemap tiles: 'dark' (Dark Matter), 'voyager' (Voyager —
-// a soft light style, easier on the eyes than pure-white Positron), 'light' (Positron).
+// a soft light style, easier on the eyes than pure-white Positron), 'light' (Positron),
+// 'osm' (the OpenStreetMap standard style, served straight from the OSM tile servers).
 // isDarkChrome drives the UI chrome + overlay colors: only 'dark' uses dark panels;
-// 'voyager' and 'light' reuse the light-theme styling (their tiles are light).
+// 'voyager', 'light' and 'osm' reuse the light-theme styling (their tiles are light).
 let mapTheme = 'dark';
 let isDarkChrome = true;
 let tileLayer = null;
@@ -85,9 +86,12 @@ const CARTO_LAYER = { dark: 'dark_all', voyager: 'rastertiles/voyager', light: '
 
 function tileSource(theme) {
     // Backend proxy enabled: route through /tiles (disk cache + CARTO→OSM failover).
-    // Disabled: fetch straight from the CARTO CDN so the backend isn't on the path.
+    // Disabled: fetch straight from the CDN so the backend isn't on the path.
     if (tileProxyEnabled) {
         return { url: `/tiles/${theme}/{z}/{x}/{y}.png`, subdomains: 'abc' };
+    }
+    if (theme === 'osm') {
+        return { url: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`, subdomains: 'abc' };
     }
     return { url: `https://{s}.basemaps.cartocdn.com/${CARTO_LAYER[theme]}/{z}/{x}/{y}.png`, subdomains: 'abcd' };
 }
@@ -346,8 +350,11 @@ function renderVisibleCoverage() {
             dashArray: freshness.dashArray
         });
 
-        // Click opens a standalone popup (survives map pan) + lines to its repeaters
-        rectangle.on('click', () => selectCell(hash, cell, cellBounds.getCenter()));
+        // Click opens a standalone popup (survives map pan) + lines to its repeaters.
+        // Lines/Distance use the cell's sample centroid (where the samples actually
+        // are), falling back to the rectangle center if no centroid is available.
+        const center = cell.centroid ? L.latLng(cell.centroid.lat, cell.centroid.lon) : cellBounds.getCenter();
+        rectangle.on('click', () => selectCell(hash, cell, center));
 
         coverageLayer.addLayer(rectangle);
         visibleRectangles[hash] = rectangle;
@@ -387,6 +394,7 @@ function aggregateAtPrecision(coverage, targetPrecision) {
         if (!aggregated[newHash]) {
             aggregated[newHash] = {
                 received: 0, lost: 0, samples: 0,
+                _wLat: 0, _wLon: 0,   // sample-weighted coordinate sums for the centroid
                 repeaters: {},
                 lastUpdate: cell.lastUpdate,
                 appVersion: cell.appVersion || 'unknown'
@@ -397,6 +405,11 @@ function aggregateAtPrecision(coverage, targetPrecision) {
         agg.received += cell.received || 0;
         agg.lost += cell.lost || 0;
         agg.samples += cell.samples || 0;
+        if (cell.centroid) {
+            const n = cell.samples || 0;
+            agg._wLat += cell.centroid.lat * n;
+            agg._wLon += cell.centroid.lon * n;
+        }
 
         // Merge repeaters (keep best signal per repeater)
         if (cell.repeaters && typeof cell.repeaters === 'object') {
@@ -418,6 +431,13 @@ function aggregateAtPrecision(coverage, targetPrecision) {
             agg.lastUpdate = cell.lastUpdate;
         }
     });
+
+    // Fold the sample-weighted coordinate sums into a centroid per aggregated cell.
+    for (const c of Object.values(aggregated)) {
+        if (c.samples > 0) c.centroid = { lat: c._wLat / c.samples, lon: c._wLon / c.samples };
+        delete c._wLat;
+        delete c._wLon;
+    }
 
     return aggregated;
 }
@@ -575,17 +595,43 @@ function findRepeaterContact(nodeId) {
     });
 }
 
-// Draw lines from a clicked coverage cell to each repeater heard in it
+// Great-circle distance between two [lat, lon] points, in km (haversine).
+function haversineKm(a, b) {
+    const R = 6371; // earth radius, km
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(b[0] - a[0]);
+    const dLon = toRad(b[1] - a[1]);
+    const lat1 = toRad(a[0]), lat2 = toRad(b[0]);
+    const h = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Draw lines from a clicked coverage cell to each repeater heard in it, each
+// labelled with its distance (km, 2 decimals) at the line's midpoint.
 function drawCellRepeaterLines(cellPos, cell) {
     selectionLayer.clearLayers();
     if (!showRepeaters || !cell || !cell.repeaters) return;
     Object.keys(cell.repeaters).forEach(nodeId => {
         const contact = findRepeaterContact(nodeId);
         if (!contact || (contact.latitude === 0 && contact.longitude === 0)) return;
-        selectionLayer.addLayer(L.polyline(
-            [[contact.latitude, contact.longitude], [cellPos.lat, cellPos.lng]],
-            selectionLineStyle()
-        ));
+        const repPos = [contact.latitude, contact.longitude];
+        const cellLatLng = [cellPos.lat, cellPos.lng];
+
+        selectionLayer.addLayer(L.polyline([repPos, cellLatLng], selectionLineStyle()));
+
+        // Distance label centered on the line's midpoint.
+        const mid = [(repPos[0] + cellLatLng[0]) / 2, (repPos[1] + cellLatLng[1]) / 2];
+        selectionLayer.addLayer(L.marker(mid, {
+            icon: L.divIcon({
+                className: 'distance-label-icon',
+                html: `<div class="distance-label">${haversineKm(repPos, cellLatLng).toFixed(2)} km</div>`,
+                iconSize: [0, 0],
+                iconAnchor: [0, 0],
+            }),
+            interactive: false,
+            keyboard: false,
+        }));
     });
 }
 
@@ -593,6 +639,7 @@ function drawCellRepeaterLines(cellPos, cell) {
 let selectedCellHash = null;
 let selectedCell = null;
 let selectedCellCenter = null;
+let selectedAnchor = null;     // stable {lat, lng} used to re-derive the selection when precision changes
 let suppressMapClickClear = false;
 
 const detailPanel = document.getElementById('detail-panel');
@@ -645,9 +692,46 @@ function selectCell(hash, cell, center) {
     selectedCellHash = hash;
     selectedCell = cell;
     selectedCellCenter = center;
+    selectedAnchor = center;   // remember the point so the selection can be re-derived on precision change
     suppressMapClickClear = true;
     showDetailPanel('Coverage Cell', cellPopupHtml(cell, center));
     drawCellRepeaterLines(center, cell);
+}
+
+// Re-derive the selected cell after the coverage precision changes (resolution
+// control). The previous selection's anchor point is re-mapped to the cell that
+// contains it at the new precision; if that cell is gone (filtered out / no
+// coverage), the nearest cell is selected instead. No-op when nothing is selected.
+function reselectCell() {
+    if (!selectedAnchor || !cachedCoverage) return;
+    const precision = getEffectivePrecision();
+    const aggregated = aggregateAtPrecision(cachedCoverage, precision);
+    const aLat = selectedAnchor.lat;
+    const aLng = selectedAnchor.lng != null ? selectedAnchor.lng : selectedAnchor.lon;
+
+    // 1) Cell that contains the anchor at the current precision.
+    let hash = Geohash.encode(aLat, aLng, precision);
+    let cell = aggregated[hash];
+
+    // 2) Fallback: nearest cell by centroid distance (anchor's cell was filtered out).
+    if (!cell) {
+        let bestHash = null, bestD = Infinity;
+        for (const [h, c] of Object.entries(aggregated)) {
+            const p = c.centroid || Geohash.center(h);
+            const pLon = p.lon != null ? p.lon : p.lng;
+            const d = (p.lat - aLat) ** 2 + (pLon - aLng) ** 2;
+            if (d < bestD) { bestD = d; bestHash = h; }
+        }
+        if (bestHash) { hash = bestHash; cell = aggregated[bestHash]; }
+    }
+
+    if (cell) {
+        const gc = Geohash.center(hash);
+        const c = cell.centroid ? L.latLng(cell.centroid.lat, cell.centroid.lon) : L.latLng(gc.lat, gc.lon);
+        selectCell(hash, cell, c);
+    } else {
+        clearSelection();
+    }
 }
 
 function clearSelection() {
@@ -656,6 +740,7 @@ function clearSelection() {
     selectedCellHash = null;
     selectedCell = null;
     selectedCellCenter = null;
+    selectedAnchor = null;
 }
 
 // ---------------------
@@ -963,6 +1048,7 @@ async function loadData() {
 function changeResolution() {
     coveragePrecision = getEffectivePrecision();
     scheduleRender();
+    reselectCell();   // re-map the current selection to the new precision so its lines stay on a real cell
     persistPanelSetting('resolution', document.getElementById('resolution-selector').value);
 }
 

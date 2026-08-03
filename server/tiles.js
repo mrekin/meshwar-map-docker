@@ -76,7 +76,7 @@ function solidPng(r, g, b) {
   const idat = zlib.deflateSync(Buffer.from([0, r, g, b])); // filter 0 + 1 pixel
   return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', idat), pngChunk('IEND', Buffer.alloc(0))]);
 }
-const BLANK = { dark: solidPng(20, 20, 20), voyager: solidPng(238, 233, 223), light: solidPng(225, 225, 225) };
+const BLANK = { dark: solidPng(20, 20, 20), voyager: solidPng(238, 233, 223), light: solidPng(225, 225, 225), osm: solidPng(235, 230, 220) };
 
 // ---- runtime state ----
 const inflight = new Map();  // key -> Promise  (dedup parallel fetches)
@@ -86,7 +86,20 @@ let pruneAt = 0, pruning = false;
 
 // ---- upstream failover ----
 const CARTO_SUBS = ['a', 'b', 'c', 'd'];
+const OSM_SUBS = ['a', 'b', 'c'];
 function upstreams(theme, z, x, y) {
+  // 'osm' = the OpenStreetMap standard style, sourced straight from the OSM tile
+  // servers (a/b/c subdomains). All three subdomains serve the same tiles, so they
+  // double as the failover chain; the blank tile is the last resort.
+  if (theme === 'osm') {
+    const so1 = OSM_SUBS[(x + y) % 3];
+    const so2 = OSM_SUBS[(x + y + 1) % 3];
+    return [
+      `https://${so1}.tile.openstreetmap.org/${z}/${x}/${y}.png`,
+      `https://${so2}.tile.openstreetmap.org/${z}/${x}/${y}.png`,
+      `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+    ];
+  }
   const t = theme === 'dark' ? 'dark_all'
           : theme === 'voyager' ? 'rastertiles/voyager'
           : 'light_all';
@@ -190,7 +203,7 @@ if (CACHE_ENABLED) maybePrune(); // reconcile totalBytes on boot
 // ---- route ----
 router.get('/:theme/:z/:x/:y.png', async (req, res) => {
   const { theme, z, x, y } = req.params;
-  if (!['dark', 'voyager', 'light'].includes(theme)) return res.status(404).end();
+  if (!['dark', 'voyager', 'light', 'osm'].includes(theme)) return res.status(404).end();
   const zi = +z, xi = +x, yi = +y;
   if (!Number.isInteger(zi) || zi < 0 || zi > 19 || xi < 0 || yi < 0) return res.status(404).end();
   res.set('Cache-Control', 'public, max-age=31536000, immutable');

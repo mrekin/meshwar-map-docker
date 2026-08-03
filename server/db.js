@@ -96,7 +96,9 @@ function transaction(d, fn) {
 
 /**
  * Get aggregated coverage data in the same format as the Cloudflare version.
- * Returns { coverage: { geohash: { received, lost, samples, repeaters, lastUpdate, appVersion } } }
+ * Returns { coverage: { geohash: { received, lost, samples, repeaters, lastUpdate, appVersion, centroid } } }
+ * where centroid = { lat, lon } is the mean of all sample coordinates in the cell
+ * (used by the frontend for the click→repeater distance lines).
  */
 function getCoverage(contributorFilter = null) {
   const d = getDb();
@@ -133,6 +135,8 @@ function getCoverage(contributorFilter = null) {
         firstSeen: row.timestamp,
         lastUpdate: row.timestamp,
         appVersion: row.app_version || 'unknown',
+        _latSum: 0,   // Σ sample latitudes (folded into `centroid` after the loop)
+        _lonSum: 0,
       };
     }
     
@@ -164,6 +168,8 @@ function getCoverage(contributorFilter = null) {
     }
     
     cell.samples += 1;
+    cell._latSum += row.latitude;
+    cell._lonSum += row.longitude;
     
     if (row.timestamp > cell.lastUpdate) {
       cell.lastUpdate = row.timestamp;
@@ -179,7 +185,18 @@ function getCoverage(contributorFilter = null) {
       delete coverage[hash];
     }
   }
-  
+
+  // Centroid = mean of all sample coordinates in the cell. The raw sums are folded
+  // into centroid here; the frontend re-derives coarser-cell centroids as a
+  // sample-weighted average, so the raw sums never need to cross the API.
+  for (const cell of Object.values(coverage)) {
+    cell.centroid = cell.samples > 0
+      ? { lat: cell._latSum / cell.samples, lon: cell._lonSum / cell.samples }
+      : null;
+    delete cell._latSum;
+    delete cell._lonSum;
+  }
+
   return coverage;
 }
 
